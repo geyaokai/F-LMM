@@ -1,0 +1,14 @@
+{
+  "venvPath": "/home/cvprtemp/miniconda3/envs",
+  "venv": "flmm-qwen-py310",
+  "extraPaths": [
+    "/data/gyk/external/mmsegmentation",
+    "/data/gyk/external/mmdetection",
+    "/home/cvprtemp/miniconda3/envs/flmm-qwen-py310/lib/python3.10/site-packages"
+  ],
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": false,
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "basic"
+}
+
