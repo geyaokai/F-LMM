@@ -277,7 +277,7 @@ class FrozenQwenSAM(FrozenQwen):
             model_kwargs['image_grid_thw'] = image_grid_thw.to(self.qwen_model.device)
             assert model_kwargs['image_grid_thw'].shape==(1, 3), "image_grid_thw should be (1, 3)"
             
-            # 添加 attention_mask（可选）
+            # 添加 attention_mask（可选,真实的是没有）
             if 'attention_mask' in data_sample:
                 model_kwargs['attention_mask'] = data_sample['attention_mask'].to(self.qwen_model.device)
             
@@ -291,7 +291,7 @@ class FrozenQwenSAM(FrozenQwen):
         # 使用 _prepare_inputs 中构建的 images_seq_mask
         if images_seq_mask.any():
             # 提取注意力：只保留文本 token 对图像 token 的注意力
-            # attentions 的形状通常是 [num_layers, batch, num_heads, seq_len, seq_len]
+            # outputs.attentions shape is [num_layers, batch, num_heads, seq_len, seq_len]
             # 我们需要提取 [num_heads, seq_len, num_image_tokens]
             attentions = []
             for attn in outputs.attentions:
@@ -312,30 +312,32 @@ class FrozenQwenSAM(FrozenQwen):
         if len(attentions) == 0:
             raise ValueError("No attentions extracted from model outputs")
         
-        num_image_tokens = attentions[0].shape[-1]  # 图像 token 数量
-        
+        # num_image_tokens = attentions[0].shape[-1]  # 图像 token 数量
+        # assert num_image_tokens==images_seq_mask[0].sum().item(), f"num_image_tokens {num_image_tokens} != images_seq_mask sum {images_seq_mask[0].sum().item()}"
         # 优先从 image_grid_thw 中估计期望 token 数量
         qwen_h: Optional[int] = None
         qwen_w: Optional[int] = None
-        expected_tokens: Optional[int] = None
-
+        # expected_tokens: Optional[int] = None
+        # imge_grid_thw: [nums_image, 3] 
         image_grid_tensor = data_sample['image_grid_thw']
         grid_tensor = image_grid_tensor[0] if image_grid_tensor.dim() == 2 else image_grid_tensor
-        grid_h = int(grid_tensor[1].item())
-        grid_w = int(grid_tensor[2].item())
+        grid_t, grid_h, grid_w = grid_tensor.tolist()
+        # qwen在送入vit前还会merge patches，将merge_size（2）*merge_size（2）的patch合并为1个token
         qwen_h = grid_h // self.merge_size
         qwen_w = grid_w // self.merge_size
-        expected_tokens = qwen_h * qwen_w
+        # expected_tokens = qwen_h * qwen_w
             
 
-        
-        # 重塑注意力：[num_heads, seq_len, num_image_tokens] -> [num_heads, seq_len, H, W]
-        assert num_image_tokens == expected_tokens, f"num_image_tokens {num_image_tokens} != expected_tokens {expected_tokens}"
+        # attentions :list of [num_heads, seq_len, num_image_tokens]
+        # attn:[num_heads, seq_len, num_image_tokens] -> [num_heads, seq_len, H, W]
+        # assert num_image_tokens == expected_tokens, f"num_image_tokens {num_image_tokens} != expected_tokens {expected_tokens}"
         attentions = [attn.view(*attn.shape[:-1], qwen_h, qwen_w) for attn in attentions]
         
-        # 提取 hidden states 并加权融合
+        # 提取 hidden states 并加权融合,stack hidden states from the last num_layers layers
+        # actually, outputs.hidden_states already contains all layers' hidden states
         hidden_states = outputs.hidden_states[-self.num_layers:]
         hidden_states = torch.stack([hs[0] for hs in hidden_states])  # [num_layers, seq_len, dim]
+        # text_layer_weights: [num_layers], hidden_states: [num_layers, seq_len, dim]
         hidden_states = (hidden_states * text_layer_weights.view(-1, 1, 1)).sum(0)  # [seq_len, dim]
         
         del outputs  # 释放内存
@@ -344,13 +346,25 @@ class FrozenQwenSAM(FrozenQwen):
         masks = data_sample['masks']
         mask_attentions = []
         text_embeds = []
-        
+        # important:!!!
+        # Hidden states already fuse visual tokens, so these embeds carry cross-modal context
+        '''
+        For an object described by multiple words, 
+        we merge their corresponding word-image attention maps to a single attention map a via element-wise average or max operation.
+        mask_id 从 0 开始编号，表示第几个 mask
+        例如，mask_ids = [0, 0, 1] 表示前两个 token 属于第 0 个 mask，第三个 token 属于第 1 个 mask
+        这样可以处理一个 mask 由多个 token 描述的情况
+        '''
         for mask_id in range(len(masks)):
             # 找到属于当前 mask 的 token 位置
             matched = mask_ids == mask_id
             assert matched.sum() > 0, f"Mask {mask_id} has no corresponding tokens"
             
             # 合并所有层的注意力
+            # attn shape: [num_heads, seq_len, H, W]
+            # atten[:, matched]: [num_heads, num_matched_tokens, H, W]
+            # mask_attentions : list of [num_layers*num_heads, H, W],len = len(masks)
+            # 提取对应 token 的注意力并合并 heads
             mask_attentions.append(
                 torch.cat(
                     [self.apply_merge(attn[:, matched], dim=1) for attn in attentions]
@@ -481,4 +495,3 @@ if __name__ == '__main__':
     # model = model.cuda().eval()
     
     print("FrozenQwen model created. Please configure and test with actual Qwen model.")
-

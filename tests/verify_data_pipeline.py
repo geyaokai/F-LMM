@@ -42,12 +42,12 @@ try:
     transform = RefCOCO2PNG(
         image_processor=dict(
             type='transformers.AutoProcessor.from_pretrained',
-            pretrained_model_name_or_path='Qwen/Qwen2.5-VL-3B-Instruct',
+            pretrained_model_name_or_path='Qwen/Qwen2.5-VL-7B-Instruct',
             trust_remote_code=True
         ),
         tokenizer=dict(
             type='transformers.AutoProcessor.from_pretrained',
-            pretrained_model_name_or_path='Qwen/Qwen2.5-VL-3B-Instruct',
+            pretrained_model_name_or_path='Qwen/Qwen2.5-VL-7B-Instruct',
             trust_remote_code=True
         ),
         prompt_template=prompt_template,

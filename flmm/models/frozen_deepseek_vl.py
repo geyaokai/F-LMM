@@ -501,7 +501,7 @@ class FrozenDeepseekVLSAM(FrozenDeepseekVL):
         )[None].to(self.mask_head.dtype)
 
         pred_masks = self.mask_head(mask_attentions)[:, 0]
-        # todo: unpad pred_masks
+        # unpad pred_masks
         meta_data = image_data['meta_datas'][0]
         padded_mask_h, padded_mask_w = pred_masks.shape[-2:]
         padded_h, padded_w = meta_data['padded_shape']['height'], meta_data['padded_shape']['width']

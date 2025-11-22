@@ -161,8 +161,18 @@ echo ""
 if ! command -v nvidia-smi &> /dev/null; then
     echo "警告: 未检测到 nvidia-smi，可能没有 GPU"
 else
-    echo "检测到的 GPU:"
-    nvidia-smi --query-gpu=index,name,memory.free --format=csv,noheader | head -n "$NUM_GPUS"
+    if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
+        echo "检测到的 GPU (受 CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES 限制):"
+        IFS=',' read -ra __VISIBLE_IDS <<< "$CUDA_VISIBLE_DEVICES"
+        for __gpu_id in "${__VISIBLE_IDS[@]}"; do
+            __gpu_id_trimmed=$(echo "$__gpu_id" | xargs)  # 去掉可能的空格
+            nvidia-smi --query-gpu=index,name,memory.free --format=csv,noheader -i "$__gpu_id_trimmed"
+        done
+        unset __VISIBLE_IDS __gpu_id __gpu_id_trimmed
+    else
+        echo "检测到的 GPU:"
+        nvidia-smi --query-gpu=index,name,memory.free --format=csv,noheader | head -n "$NUM_GPUS"
+    fi
     echo ""
 fi
 

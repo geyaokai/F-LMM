@@ -20,23 +20,26 @@ from mmdet.datasets.transforms import LoadAnnotations
 from math import sqrt
 from mmengine.visualization import Visualizer, TensorboardVisBackend
 
+
 #######################################################################
 #                          PART 1  Settings                           #
 #######################################################################
 
 # Scheduler & Optimizer
 # 每卡实际 batch 大小（per-device）
-batch_size = 90
+batch_size = 80
 # 梯度累积步数。有效全局 batch ≈ batch_size × accumulative_counts × GPU数。
-accumulative_counts = 2
+accumulative_counts = 3
 # DataLoader 的工作线程数。IO 密集时可适当调大，注意与系统 CPU 资源平衡。
-dataloader_num_workers = 128
+dataloader_num_workers = 8
 # 训练轮数（按 epoch 计）。已切换为 epoch 制保存，每个 epoch 末会落盘。
 max_epochs = 8
 # 优化器类型。AdamW 适合 Transformer 系模型，含权重衰减解耦。
 optim_type = AdamW
 # 学习率：按 sqrt(batch/8) 进行弱缩放，batch 增大时适度放大学习率，避免过快。
-lr = 1e-4*sqrt(batch_size/8)
+# torch.distributed sets WORLD_SIZE after rank launch; fall back to 1 for single-GPU
+world_size = 2 #显卡数量
+lr = 1e-4 * sqrt(batch_size * accumulative_counts * world_size / 8)
 # AdamW 的动量超参数，(beta1, beta2)。默认对大模型较为稳健。
 betas = (0.9, 0.999)
 # 权重衰减系数。对抗过拟合与数值漂移，常见取值 0.01。
@@ -47,7 +50,8 @@ max_norm = 1
 warmup_ratio = 0.03
 
 # Save
-save_total_limit = 5  # Maximum checkpoints to keep (-1 means unlimited)
+save_steps = 100
+save_total_limit = 2  # Maximum checkpoints to keep (-1 means unlimited)
 
 
 #######################################################################
@@ -199,10 +203,10 @@ train_dataloader = dict(
     num_workers=dataloader_num_workers,
     persistent_workers=True,
     pin_memory=True,
-    prefetch_factor=2,
+    prefetch_factor=4,
     dataset=dict(type=concat_datasets,
                  datasets_list=datasets_list),
-    sampler=dict(type='mmengine.dataset.InfiniteSampler', shuffle=True),
+    sampler=dict(type=DefaultSampler, shuffle=True),
     collate_fn=dict(type=custom_collate_fn))
 
 #######################################################################
@@ -249,15 +253,15 @@ default_hooks = dict(
     logger=dict(type=LoggerHook, log_metric_by_epoch=True, interval=10),
     # enable the parameter scheduler.
     param_scheduler=dict(type=ParamSchedulerHook),
-    # save checkpoint at the end of each epoch (epoch-based snapshot)
+    # save checkpoint per `save_steps` (step-based snapshot)
     checkpoint=dict(
         type=CheckpointHook,
-        by_epoch=True,
-        interval=1,
+        by_epoch=False,
+        interval=save_steps,
         max_keep_ckpts=save_total_limit,
         save_optimizer=True,
         save_param_scheduler=True,
-        filename_tmpl='epoch_{:03d}.pth'),
+        filename_tmpl='iter_{:06d}.pth'),
     # set sampler seed in distributed environment.
     sampler_seed=dict(type=DistSamplerSeedHook),
 )
@@ -290,4 +294,3 @@ randomness = dict(seed=None, deterministic=False)
 
 # set log processor
 log_processor = dict(by_epoch=True)
-

@@ -20,8 +20,7 @@
 3. 每个 patch 被拉平成长度 `channel * temporal_patch_size * patch_size * patch_size` 的向量，所有 patch 沿 batch 维拼接。
 
 ## 关键输出 tensor
-- `input_ids`: `(text_num, token_num)`，已经替换好 `<|image_pad|>` 数目以匹配视觉 token。
-- `attention_mask`: `(text_num, token_num)`，补零处表示 padding。
+- `input_ids`: `(token_num)`，已经替换好 `<|image_pad|>` 数目以匹配视觉 token。
 - `pixel_values`: `(sum(grid_t * grid_h * grid_w), channel * temporal_patch_size * patch_size^2)`。
 - `image_grid_thw`: `(image_num, 3)`，记录对应图的 `(grid_t, grid_h, grid_w)`，用于还原 patch 排布。
 如果是多图，pixel_values的值就会是分别处理两个图像然后在第一个维度加起来的
