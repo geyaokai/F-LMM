@@ -229,13 +229,17 @@ param_scheduler = [
         start_factor=1e-5,
         by_epoch=True,
         begin=0,
-        end=warmup_ratio * max_epochs),
+        end=warmup_ratio * max_epochs,
+        convert_to_iter_based=True
+        ),
     dict(
         type=CosineAnnealingLR,
         eta_min=0.0,
         by_epoch=True,
         begin=warmup_ratio * max_epochs,
-        end=max_epochs)
+        end=max_epochs,
+        convert_to_iter_based=True
+        )
 ]
 
 # train, val, test setting

@@ -6,7 +6,7 @@ from mmengine.model import BaseModel
 from xtuner.model.utils import LoadWoInit
 from mmengine.logging import print_log
 from flmm.utils import compute_mask_IoU
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 
 class FrozenQwen(BaseModel):
@@ -104,6 +104,10 @@ class FrozenQwen(BaseModel):
         else:
             self.merge_size = 2  # Qwen2.5-VL 默认值
         print_log(f"Merge size: {self.merge_size}")
+        self._generation_ready = False
+        self._vision_hook_handle = None
+        self._last_vision_tokens: Optional[torch.Tensor] = None
+        self._generation_ready = False
 
     def apply_merge(self, x, dim=1):
         """合并注意力头"""
@@ -204,6 +208,21 @@ class FrozenQwen(BaseModel):
         """
         raise NotImplementedError("需要根据 Qwen 实际接口实现")
 
+    def _ensure_vision_hook(self):
+        if self._vision_hook_handle is None and hasattr(self.qwen_model, 'visual'):
+            self._vision_hook_handle = self.qwen_model.visual.register_forward_hook(
+                self._capture_vision_tokens)
+
+    def _capture_vision_tokens(self, module, inputs, output):
+        tokens = getattr(output, 'last_hidden_state', None)
+        if tokens is None:
+            if isinstance(output, (tuple, list)) and len(output) > 0:
+                tokens = output[0]
+            else:
+                tokens = output
+        if tokens is not None:
+            self._last_vision_tokens = tokens.detach()
+
 
 class FrozenQwenSAM(FrozenQwen):
     """
@@ -233,10 +252,209 @@ class FrozenQwenSAM(FrozenQwen):
         
         # 可学习的层权重（用于加权融合不同层的 hidden states）
         self.text_layer_weights = nn.Parameter(torch.ones(self.num_layers))
+        self.prompt_template: Dict[str, str] = {}
+        self.additional_prompt: str = ''
+        self.max_new_tokens: int = 256
 
     def get_text_layer_weights(self):
         """获取文本层权重（softmax 归一化）"""
         return torch.softmax(self.text_layer_weights, dim=0)
+
+    def _build_meta_data(self, image, image_grid_thw: torch.Tensor) -> Dict[str, Dict[str, float]]:
+        assert image_grid_thw.shape == (1, 3)
+        grid = image_grid_thw[0]
+        grid_h = int(grid[1].item())
+        grid_w = int(grid[2].item())
+        processed_h = grid_h * self.patch_size
+        processed_w = grid_w * self.patch_size
+        original_h = image.height
+        original_w = image.width
+        scale_h = processed_h / original_h if original_h > 0 else 1.0
+        scale_w = processed_w / original_w if original_w > 0 else 1.0
+        return {
+            'image_shape': {'height': processed_h, 'width': processed_w},
+            'padded_shape': {'height': processed_h, 'width': processed_w},
+            'padding': {'before_height': 0.0, 'after_height': 0.0,
+                        'before_width': 0.0, 'after_width': 0.0},
+            'scale_factor': (scale_h, scale_w),
+            'original_shape': {'height': original_h, 'width': original_w},
+        }
+
+    def _build_conversation(self, image, question: str) -> List[Dict]:
+        query = question.strip()
+        if self.additional_prompt:
+            query = f"{query} {self.additional_prompt}".strip()
+        if not query:
+            query = "Describe this image."
+        system_prompt = self._sanitize_prompt_text(self.prompt_template.get('SYSTEM', '').strip())
+        conversation: List[Dict] = []
+        if system_prompt:
+            conversation.append({
+                'role': 'system',
+                'content': [{'type': 'text', 'text': system_prompt}]
+            })
+        conversation.append({
+            'role': 'user',
+            'content': [
+                {'type': 'image', 'image': image},
+                {'type': 'text', 'text': query},
+            ],
+        })
+        # import pdb; pdb.set_trace()
+        return conversation
+
+    def _sanitize_prompt_text(self, text: str) -> str:
+        """Remove legacy image placeholders from prompts."""
+        if not text:
+            return ''
+        placeholders = {
+            '<image>',
+            '<|image_pad|>',
+            '<|vision_start|>',
+            '<|vision_end|>',
+            '<|im_start|>',
+            '<|im_end|>',
+        }
+        processor_token = getattr(self.processor, 'image_token', None)
+        if processor_token:
+            placeholders.add(processor_token)
+        sanitized = text
+        for token in placeholders:
+            sanitized = sanitized.replace(token, ' ')
+        return ' '.join(sanitized.split()).strip()
+
+    def _prepare_for_generation(self,
+                                image_processor,
+                                prompt_template,
+                                max_new_tokens=256,
+                                additional_prompt='',
+                                **kwargs):
+        if isinstance(image_processor, dict):
+            self.processor = BUILDER.build(image_processor)
+        elif image_processor is not None:
+            self.processor = image_processor
+        assert self.processor is not None
+        assert hasattr(self.processor, 'apply_chat_template')
+        self.prompt_template = prompt_template or {}
+        self.max_new_tokens = max_new_tokens
+        self.additional_prompt = self._sanitize_prompt_text(additional_prompt or '')
+        self._generation_ready = True
+        self._ensure_vision_hook()
+
+    @torch.no_grad()
+    def answer(self, image, question, max_new_tokens=None, **kwargs):
+        assert self._generation_ready
+        self._last_vision_tokens = None
+        conversation = self._build_conversation(image, question)
+        prompt_text = self.processor.apply_chat_template(
+            conversation, tokenize=False, add_generation_prompt=True)
+        inputs = self.processor(
+            text=[prompt_text],
+            images=[image],
+            return_tensors='pt',
+            padding=False)
+        input_ids = inputs['input_ids'].to(self.qwen_model.device)
+        pixel_values = inputs['pixel_values'].to(
+            device=self.qwen_model.device, dtype=self.qwen_model.dtype)
+        image_grid_thw = inputs['image_grid_thw'].to(self.qwen_model.device)
+        attention_mask = inputs.get('attention_mask')
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_ids)
+        else:
+            attention_mask = attention_mask.to(self.qwen_model.device)
+        pad_id = self.tokenizer.pad_token_id
+        if pad_id is None:
+            pad_id = self.tokenizer.eos_token_id
+        
+        # squences: [1, seq_len]
+        sequences = self.qwen_model.generate(
+            input_ids=input_ids,
+            pixel_values=pixel_values,
+            image_grid_thw=image_grid_thw,
+            attention_mask=attention_mask,
+            max_new_tokens=max_new_tokens or self.max_new_tokens,
+            do_sample=False,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=pad_id,
+        )
+        input_len = input_ids.shape[-1]
+        output_ids = sequences[0, input_len:].detach().cpu()
+        output_text = self.tokenizer.decode(output_ids, skip_special_tokens=False)
+        full_attention_mask = torch.ones_like(sequences)
+        # outputs: Seq2SeqLMOutput
+        # outputs.attentions shape is [num_layers, batch, num_heads, seq_len, seq_len]
+        # output.hiiden_states shape is [num_layerslen+1, batch, seq_len, dim]
+        outputs = self.qwen_model(
+            input_ids=sequences,
+            pixel_values=pixel_values,
+            image_grid_thw=image_grid_thw,
+            attention_mask=full_attention_mask,
+            output_attentions=True,
+            output_hidden_states=True,
+            return_dict=True)
+        
+        grid = image_grid_thw
+        qwen_h = int(grid[0, 1].item()) // self.merge_size
+        qwen_w = int(grid[0, 2].item()) // self.merge_size
+        prep_inputs = self._prepare_inputs({'input_ids': sequences[0]})
+        images_seq_mask = prep_inputs['images_seq_mask']
+        assert images_seq_mask.any()
+        generation_slice = slice(input_len, sequences.shape[-1])
+        attentions: List[torch.Tensor] = []
+        import pdb; pdb.set_trace()
+        # outputs.attentions shape is [num_layers, batch, num_heads, seq_len, seq_len]
+        for attn in outputs.attentions:
+            layer_attn = attn[0]
+            layer_image = layer_attn[..., images_seq_mask]
+            num_image_tokens = layer_image.shape[-1]
+            assert num_image_tokens == qwen_h * qwen_w
+            layer_image = layer_image.view(self.num_heads, layer_attn.shape[-2], qwen_h, qwen_w)
+            # attentions : list of [num_heads, generation_seq_len, H, W]
+            attentions.append(layer_image[:, generation_slice])
+        attention_maps = torch.stack(attentions)
+        hidden_states = outputs.hidden_states[-self.num_layers:]
+        hidden_states = torch.stack([hs[0] for hs in hidden_states])
+        weights = self.get_text_layer_weights().view(-1, 1, 1)
+        hidden_states = (hidden_states * weights).sum(0)
+        hidden_states = hidden_states[generation_slice]
+        meta_data = self._build_meta_data(image, image_grid_thw)
+        vision_tokens = self._last_vision_tokens
+        return dict(output_ids=output_ids,
+                    output_text=output_text,
+                    hidden_states=hidden_states,
+                    attention_maps=attention_maps,
+                    meta_data=meta_data,
+                    vision_tokens=vision_tokens)
+
+    @torch.no_grad()
+    def ground(self, image, positive_ids, hidden_states, attention_maps, meta_data,
+               use_sam=True, **kwargs):
+        mask_attentions = []
+        text_embeds = []
+        for start, end in positive_ids:
+            assert end > start
+            layer_feats = [self.apply_merge(layer[:, start:end], dim=1)
+                           for layer in attention_maps]
+            mask_attentions.append(torch.cat(layer_feats))
+            text_embeds.append(self.text_proj(hidden_states[start:end]))
+        mask_attentions = torch.stack(mask_attentions).to(self.mask_head.dtype)
+        pred_masks = self.mask_head(mask_attentions)[:, 0]
+        padded_mask_h, padded_mask_w = pred_masks.shape[-2:]
+        padded_h = meta_data['padded_shape']['height']
+        padded_w = meta_data['padded_shape']['width']
+        before_height = int(meta_data['padding']['before_height'] * padded_mask_h / padded_h)
+        before_width = int(meta_data['padding']['before_width'] * padded_mask_w / padded_w)
+        mask_h = int(meta_data['image_shape']['height'] * padded_mask_h / padded_h + 0.5)
+        mask_w = int(meta_data['image_shape']['width'] * padded_mask_w / padded_w + 0.5)
+        pred_masks = pred_masks[:, before_height:before_height + mask_h,
+                                before_width:before_width + mask_w].contiguous()
+        sam_pred_masks = self.sam(image, pred_masks, text_embeds) if use_sam else pred_masks
+        pred_masks = F.interpolate(pred_masks[None].float(),
+                                   size=(image.height, image.width),
+                                   mode='bilinear')[0].to(pred_masks)
+        if not use_sam:
+            sam_pred_masks = pred_masks
+        return pred_masks, sam_pred_masks
 
     def _forward(self, data_sample):
         """
@@ -270,6 +488,7 @@ class FrozenQwenSAM(FrozenQwen):
             }
             
             # 添加 pixel_values（必需）
+            # pixel_values: [grid_t * grid_h * grid_w, channel * temporal_patch_size(2) * patch_size(14) * patch_size(14)]
             pixel_values = data_sample['pixel_values']
             model_kwargs['pixel_values'] = pixel_values.to(self.qwen_model.device)
             # 添加 image_grid_thw（Qwen2.5-VL 必需）
@@ -477,6 +696,7 @@ class FrozenQwenSAM(FrozenQwen):
 
         return loss_dict
 
+    
 
 if __name__ == '__main__':
     """

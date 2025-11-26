@@ -57,6 +57,7 @@ prompt_template = dict(
 # Qwen 使用 <|image_pad|> 作为图像占位符
 # 注意：Qwen 的图像 token 数量是动态的，这里先用一个估计值
 # 对于 224x224 的图像，patch_size=14，约为 16x16=256 个 tokens
+# used only in training dataset
 prompt = '<|image_pad|>' + "Please give me a description of the image."
 
 # 模型配置

@@ -25,7 +25,7 @@ image + text (RefCOCO/PNG)
        FrozenQwenSAM._forward (flmm/models/frozen_qwen.py)
         1.  qwen_model(input_ids, pixel_values, image_grid_thw)
             ├─ hidden_states [num_layers, seq_len, hidden_size]
-            └─ attentions [num_layers, num_heads, seq_len, grid_t]
+            └─ attentions [num_layers, num_heads, seq_len, seq_len]
         2.  Reshape attentions → [num_layers, num_heads, seq_len, qwen_h, qwen_w]
         3.  按 mask_ids 聚合 → mask_attentions[num_masks, num_layers*num_heads, qwen_h, qwen_w]
         4.  text_proj(hidden_states per mask) → text_embeds[num_tokens_i, sam_dim]
@@ -40,12 +40,12 @@ image + text (RefCOCO/PNG)
 | --- | --- | --- | --- |
 | `input_ids` | `[seq_len]`，dataloader 后 `[B, seq_len]` | `RefCOCO2PNG.transform_concat` | 已含 `<|vision_start|> ... <|vision_end|>`；mask_ids 中 `-1` 表示非目标 token。 |
 | `mask_ids` | `[seq_len]` | 同上 | 每个对象的 token 编号；用于聚合注意力与 hidden states。 |
-| `pixel_values` | `[grid_t, vit_dim]`，被 DataLoader 堆叠成 `[B, grid_t, vit_dim]` | `QwenImageProcessorWrapper` | `grid_t = grid_h × grid_w`；vit_dim 与模型 `vision_hidden_size` 一致（3B=2560）。 |
-| `image_grid_thw` | `[1, 3]` (t, h, w) | 同上 | `qwen_h = grid_h / merge_size`，`qwen_w = grid_w / merge_size`；若缺失则回退 `meta_data`。 |
+| `pixel_values` | `[grid_t × grid_h × grid_w, channel × temporal_patch_size(2) × patch_size(14) × patch_size(14)]` | `QwenImageProcessorWrapper` | 每个 patch 展平为一行，图像场景 `grid_t=1`，总 token 数等于 `grid_h × grid_w`。 |
+| `image_grid_thw` | `[1, 3]` (grid_t, grid_h, grid_w) | 同上 | `qwen_h = grid_h / merge_size`，`qwen_w = grid_w / merge_size`；若缺失则回退 `meta_data`。 |
 | `images_seq_mask` | `[seq_len]` bool | `_prepare_inputs` | 标记 `<|vision_start|>` 与 `<|vision_end|>` 之间的 token，用于裁剪注意力的最后一维。 |
-| `attentions` | `[num_layers, num_heads, seq_len, grid_t]` | Qwen 输出 | `grid_t` 与 `image_grid_thw[:,0]` 对齐，随后 reshape 到 `[num_layers, num_heads, seq_len, qwen_h, qwen_w]`。 |
+| `attentions` | `list[num_layers]`，每项形如 `[num_heads, seq_len, num_image_tokens]` | Qwen 输出 | `num_image_tokens = grid_t × grid_h × grid_w`，图像用例中 `grid_t=1`；先按 `images_seq_mask` 选出视觉 token，再 reshape 为 `[num_heads, seq_len, qwen_h, qwen_w]`。 |
 | `mask_attentions` | `[num_masks, num_layers*num_heads, qwen_h, qwen_w]` | `FrozenQwenSAM._forward` | 对属于同一 mask 的 token 做 `apply_merge`（mean/max），再按层 concat 成 U-Net 输入通道。 |
-| `hidden_states` | `[seq_len, hidden_size]` | Qwen 输出 | 取最后 `num_layers` 层，经 `text_layer_weights` 加权；维度与语言模型隐藏维一致（3B=3584）。 |
+| `hidden_states` | `[seq_len, hidden_size]` | Qwen 输出 | 取最后 `num_layers` 层，经 `text_layer_weights` 加权；维度与语言模型隐藏维一致。 |
 | `text_embeds` | `[tokens_i, sam_prompt_dim]` | `text_proj(hidden_states[matched])` | tokens_i 为该 mask 的文本 token 数；包含已融合视觉上下文的多模态表示。 |
 | `pred_masks` | `[num_masks, H_pad, W_pad]` → `[num_masks, H_img, W_img]` | `mask_head` → padding 裁剪 | H/W 与 `meta_data[image_shape]` 对齐；在送入 SAM 前保持 logits。 |
 | `prompt_masks` | `[num_masks, 1, 256, 256]` | `SAMWrapper.generate_prompt_masks` | 由 `pred_masks` 缩放/Pad 获取；用于 SAM prompt encoder。 |
