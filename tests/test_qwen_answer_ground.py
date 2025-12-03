@@ -139,7 +139,7 @@ def main():
         answer_output = model.answer(
             image=image, question=args.question, max_new_tokens=args.max_new_tokens)
     hidden_states = answer_output['hidden_states']
-    # attention_maps shape: (gen_len, num_layers, num_heads, seq_len, seq_len)
+    # attention_maps shape: (num_layers, num_heads,seq_len, qwen_h, qwen_w)
     attention_maps = answer_output['attention_maps']
     meta_data = answer_output['meta_data']
     print('Answer text:', answer_output['output_text'])
@@ -184,6 +184,7 @@ def main():
         patch_unit = model.patch_size * model.merge_size
         qwen_h = grid_h // model.merge_size
         qwen_w = grid_w // model.merge_size
+        import pdb; pdb.set_trace()
         col_start = max(0, math.floor(x0 / patch_unit))
         col_end = min(qwen_w, math.ceil(x1 / patch_unit))
         row_start = max(0, math.floor(y0 / patch_unit))

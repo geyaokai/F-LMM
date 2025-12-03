@@ -8,7 +8,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -66,12 +66,81 @@ class SessionState:
         self.last_records = []
 
 
+def parse_device_map_arg(raw_value: Optional[str]) -> Optional[str]:
+    if not raw_value:
+        return None
+    normalized = raw_value.strip()
+    if not normalized or normalized.lower() in {'none', 'single', 'disable', 'disabled'}:
+        return None
+    return normalized
+
+
+def parse_max_memory_arg(raw_value: Optional[str]) -> Optional[Dict[str, str]]:
+    if not raw_value:
+        return None
+    entries = [chunk.strip() for chunk in raw_value.split(',') if chunk.strip()]
+    if not entries:
+        return None
+    limits: Dict[str, str] = {}
+    for item in entries:
+        if ':' not in item:
+            raise ValueError(f'Invalid max-memory entry "{item}". Use format "0:20GiB,1:20GiB".')
+        key, value = item.split(':', 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not value:
+            raise ValueError(f'Invalid max-memory entry "{item}".')
+        limits[key] = value
+    return limits or None
+
+
+def move_auxiliary_modules(model, device: torch.device):
+    for attr in ('mask_head', 'sam', 'text_proj'):
+        module = getattr(model, attr, None)
+        if module is not None:
+            module.to(device)
+    if hasattr(model, 'text_layer_weights'):
+        model.text_layer_weights = torch.nn.Parameter(model.text_layer_weights.to(device))
+
+
+def infer_qwen_primary_device(qwen_model, fallback_device: torch.device) -> torch.device:
+    existing = getattr(qwen_model, 'device', None)
+    if existing is not None:
+        try:
+            device = torch.device(existing)
+            qwen_model.device = device
+            return device
+        except (TypeError, RuntimeError):
+            pass
+    device_map = getattr(qwen_model, 'hf_device_map', None)
+    if isinstance(device_map, dict) and device_map:
+        first_target = next(iter(device_map.values()))
+        try:
+            device = torch.device(first_target)
+        except (TypeError, RuntimeError):
+            device = fallback_device
+    else:
+        device = fallback_device
+    qwen_model.device = device
+    return device
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description='Interactive Qwen-FLMM demo: ask → ground → inspect.')
-    parser.add_argument('config', help='Path to Qwen config.')
+    parser.add_argument(
+        'config',
+        nargs='?',
+        default='configs/qwen/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.py',
+        help='Path to Qwen config (default: 7B Qwen2.5-VL).')
     parser.add_argument('--checkpoint', default=None, help='Checkpoint path.')
     parser.add_argument('--device', default='cuda', help='Device for inference.')
+    parser.add_argument('--device-map', default='auto',
+                        help='Device map for the Qwen base model. '
+                             'Use "auto" to shard across visible GPUs or "none" to disable.')
+    parser.add_argument('--device-max-memory', default=None,
+                        help='Optional per-device memory hints when using --device-map. '
+                             'Format: "0:20GiB,1:20GiB".')
     parser.add_argument('--image', default=None, help='Optional image to preload.')
     parser.add_argument('--max-new-tokens', type=int, default=256)
     parser.add_argument('--phrase-max-tokens', type=int, default=64)
@@ -85,12 +154,29 @@ def parse_args():
 
 
 def load_model(cfg, args):
+    device_map = parse_device_map_arg(args.device_map)
+    max_memory = parse_max_memory_arg(args.device_max_memory) if device_map else None
+    model_cfg = cfg.model
+    qwen_cfg = model_cfg.get('model', None)
+    if device_map and qwen_cfg is not None:
+        qwen_cfg['device_map'] = device_map
+        if max_memory:
+            qwen_cfg['max_memory'] = max_memory
     model = BUILDER.build(cfg.model)
     if args.checkpoint:
         state_dict = guess_load_checkpoint(args.checkpoint)
         missing, unexpected = model.load_state_dict(state_dict, strict=False)
         print(f'[Model] Loaded checkpoint: missing={len(missing)}, unexpected={len(unexpected)}')
-    model = model.to(args.device).eval()
+    target_device = torch.device(args.device)
+    if device_map:
+        move_auxiliary_modules(model, target_device)
+        qwen_device = infer_qwen_primary_device(model.qwen_model, target_device)
+        print(f'[Model] Using device_map="{device_map}" (primary device: {qwen_device})')
+    else:
+        model = model.to(target_device)
+        qwen_device = target_device
+    model = model.eval()
+    model.qwen_model.device = qwen_device
     append_prompt = args.extra_prompt or ''
     model._prepare_for_generation(
         image_processor=cfg.image_processor,

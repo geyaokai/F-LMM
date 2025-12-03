@@ -401,7 +401,7 @@ class FrozenQwenSAM(FrozenQwen):
         assert images_seq_mask.any()
         generation_slice = slice(input_len, sequences.shape[-1])
         attentions: List[torch.Tensor] = []
-        import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         # outputs.attentions shape is [num_layers, batch, num_heads, seq_len, seq_len]
         for attn in outputs.attentions:
             layer_attn = attn[0]

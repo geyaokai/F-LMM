@@ -1,6 +1,6 @@
 # Qwen-FLMM `interact.py` 使用指南
 
-`interact.py` 是面向 Qwen2.5-VL / FrozenQwenSAM 的命令行 demo，提供「提问 → 自动抽取短语 → 选择短语 Grounding → 查看掩码/ROI → 继续追问」的一体化体验。相比旧版 `grounded_conversation.py`，它完全脱离 spaCy，直接依赖 Qwen 自身生成结构化短语，且在一次加载后支持多轮操作。
+`interact.py` 是面向 Qwen2.5-VL / FrozenQwenSAM 的命令行 demo，提供「提问 → 自动抽取短语 → 选择短语 Grounding → 查看掩码/ROI → 继续追问」的一体化体验。相比旧版 `grounded_conversation.py`，它完全脱离 spaCy，直接依赖 Qwen 自身生成结构化短语，且在一次加载后支持多轮操作。脚本默认加载 7B 的 `configs/qwen/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.py`，无需再手动传参；若想切换回 3B 等配置，可仍然在命令行第一个参数里写入新的 config 路径。
 
 ## 1. 前置准备
 
@@ -14,18 +14,25 @@
 cd /home/cvprtemp/gyk/F-LMM
 export PYTHONPATH=.
 
+# 默认即 7B 配置，推荐直接开启多卡分布加载
+CUDA_VISIBLE_DEVICES=0,1 \
 python scripts/demo/interact.py \
-    configs/qwen/frozen_qwen2_5_vl_3b_instruct_unet_sam_l_refcoco_png.py \
-    --checkpoint checkpoints/frozen_qwen2_5_vl_3b_instruct_unet_sam_l_refcoco_png.pth \
+    --device-map auto \
+    --device-max-memory 0:22GiB,1:22GiB \
+    --checkpoint checkpoints/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.pth \
     --image data/coco/val2017/000000000632.jpg \
     --max-new-tokens 256
 ```
+
+> ✅ `--device-map auto` 会调用 Hugging Face Accelerate 在所有可见 GPU 上自动切分 Qwen2.5-VL-7B；`--device` 仍然控制 UNet/SAM 等附属模块所在的主显卡。若只用单张卡，可传 `--device-map none`。
 
 常用可选参数：
 
 | 参数 | 说明 |
 |------|------|
 | `--device cuda:0` | 指定显卡 |
+| `--device-map auto` | Qwen 主干的 `device_map`，默认 `auto`；传 `none` 可退回单卡 |
+| `--device-max-memory 0:22GiB,1:22GiB` | （可选）给 `device_map` 提示每张卡的显存上限 |
 | `--results-dir scripts/demo/results/qwen` | 指定输出目录 |
 | `--phrase-max-tokens` | 抽短语时的最大 new tokens（默认 64） |
 | `--max-phrases` | 每轮显示的候选短语上限（默认 6） |
@@ -122,7 +129,7 @@ scripts/demo/
 
 ## 5. 注意事项
 
-1. **显存占用**：答问和 grounding 都在 GPU 上完成，首次 `load` 后的多轮 `ask/ground` 不需重建模型，但仍需保证 GPU 有充足余量。
+1. **显存占用**：答问和 grounding 都在 GPU 上完成。7B 版本默认使用多卡，当 `--device-map auto` 开启时，Qwen 主模型会在多张卡之间分布；`--device` 对应的主卡需要同时容纳 SAM/UNet 与 ROI 推理。若只有单卡，可传 `--device-map none` 并酌情调低 `--max-new-tokens`。
 2. **短语提取**：默认完全依赖 Qwen 返回的 JSON，若模型答非所问，可自行修改 `extract_phrases_via_model` 或在 `interact.py` 中扩展为手动输入模式。
 3. **ROI 质量**：若掩码为空，`inspect` 会提示 `Selected mask has no ROI`；可重新选择短语或调大 `max_new_tokens`。
 4. **结果清理**：长时间测试后可删除 `scripts/demo/results/qwen` 下的历史 round，以免占用磁盘。
