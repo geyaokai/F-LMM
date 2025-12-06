@@ -23,7 +23,7 @@ def parse_args():
         description='Run FrozenQwenSAM.answer() -> ground() on one sample.')
     parser.add_argument(
         '--config',
-        default='configs/qwen/frozen_qwen2_5_vl_3b_instruct_unet_sam_l_refcoco_png.py'
+        default='configs/qwen/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.py'
     )
     parser.add_argument('--checkpoint', default=None)
     parser.add_argument('--device', default='cuda')
@@ -129,6 +129,7 @@ def main():
         missing, unexpected = model.load_state_dict(state_dict, strict=False)
         print(f'Loaded checkpoint. missing={len(missing)}, unexpected={len(unexpected)}')
     model = model.to(args.device).eval()
+    import pdb; pdb.set_trace()    
     model._prepare_for_generation(
         image_processor=cfg.image_processor,
         prompt_template=cfg.prompt_template,

@@ -18,7 +18,7 @@
 
 | 字段 | 来源 | 用途 | Debug 事项 |
 |------|------|------|------------|
-| `vision_tokens` | Qwen ViT 输出 `[grid_t × grid_h × grid_w, vision_hidden_size]` | ROI 重采样的原素材 | HuggingFace 默认输出里拿不到，需要在 `self.qwen_model.visual` 上挂 hook 把 `last_hidden_state` 抓出来。 |
+| `vision_tokens` | Qwen ViT 输出 `[grid_t × grid_h × grid_w//(merge_size**2), vision_hidden_size]` | ROI 重采样的原素材 | HuggingFace 默认输出里拿不到，需要在 `self.qwen_model.visual` 上挂 hook 把 `last_hidden_state` 抓出来。 |
 | `vision_grid` (`grid_t`, `grid_h`, `grid_w`, `merge_size`) | 已有 `image_grid_thw` | 像素 → patch 索引映射 | 记住 `grid_t` 是时间维，图像恒为 1，不要再假设 `grid_h × grid_w == grid_t`。 |
 | `pixel_offsets` | `meta_data` + padding | ROI → 真实像素坐标 | 现有逻辑可复用，注意 ROI 若超出图像需 clip。 |
 
@@ -48,16 +48,14 @@ Debug：手动 print 若 ROI 太小导致 `row_end == row_start`，直接扩张 
 
 ## 4. 重采样逻辑
 
-- **抽取 token**：在 `vision_tokens` 里按 `(row, col)` 转线性索引 `idx = row * qwen_w + col`，得到子集 `[num_roi_tokens, vision_hidden_size]`。
-- **Projector**：
-  - 引入 `self.resample_proj = nn.Linear(vision_hidden_size, language_hidden_size)`（可与 `text_proj` 共用或单独初始化）。
-  - 输出 `roi_context = resample_proj(roi_tokens)`，作为额外 context token。
+- **抽取 token**：在 `vision_tokens` 里按 `(row, col)` 转线性索引 `idx = row * qwen_w + col`，得到子集 `[num_roi_tokens, vision_hidden_size]`（此时 `vision_hidden_size == language_hidden_size`），直接作为 `roi_context`。
+- **Token 维度对齐**：`FrozenQwenSAM.answer()` 已在 `self.qwen_model.visual` 的输出挂 hook，拿到的是 `Qwen2_5_VLPatchMerger` 之后的 token（shape `[qwen_h*qwen_w, 3584]`，与语言隐藏维一致）。因此 ROI token 可直接拼进 `inputs_embeds`，无需再额外线性映射；只有当 hook 改到 merger 之前、缓存成 1280 维 ViT 特征时，才需要重新启用额外的 `nn.Linear(vision_hidden_size, language_hidden_size)`。
 - **拼接方式**：
  1. 重新构造 prompt：`<|image_pad|>` 标记仍由 processor 负责，额外在文本末尾附加 “Here are ROI tokens” 类似提示。
  2. 将 `roi_context` 插入到 `input_embeds` 的合适位置（例如 `<vision_end>` 之后），记得同步扩展 `attention_mask`。
   3. 调用 `qwen_model` 的 `generate` 或 `forward`，并关闭重新编码。
 
-注意：HuggingFace 的 Qwen 接口允许传 `inputs_embeds`，可参考 `DeepSeek.visual_cot_v1` 里的 `prepare_inputs_embeds` 用法。需要你手动测试 `resample_proj` 输出的 dtype/device 与语言模型一致。
+注意：HuggingFace 的 Qwen 接口允许传 `inputs_embeds`，可参考 `DeepSeek.visual_cot_v1` 里的 `prepare_inputs_embeds` 用法。只需保证从缓存中取出的 `roi_context` 与语言模型的 dtype/device 对齐；如未来改为缓存 merger 前的 ViT 特征，再补一层线性映射即可。
 
 ---
 
