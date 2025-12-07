@@ -2,6 +2,12 @@
 
 本指南说明如何把当前 `FrozenQwenSAM` 交互逻辑迁移到 Web 形态，覆盖后端 API、前端 UI 与部署建议，便于快速搭建在线 Demo。
 
+## 代码风格
+- 简洁明了（保留必要注释），符合最新官方文档风格，避免使用遗弃的版本
+- 避免过度追求代码健壮性
+- 代码具有可维护性
+- 不确定的地方主动终止代码编写，和我确认细节
+
 ## 1. 目标能力
 
 - 支持多轮问答（沿用 `SessionState.history`）
@@ -12,7 +18,8 @@
 
 ### 2.1 框架选择
 
-- 推荐 FastAPI（或 Flask）。FastAPI 自带类型提示、OpenAPI 文档和 async 支持，便于后续扩展流式生成。
+- 推荐 FastAPI。FastAPI 自带类型提示、OpenAPI 文档和 async 支持，便于后续扩展流式生成。
+  - [官方文档]( https://fastapi.tiangolo.com/learn/)
 - 直接引用 `scripts/demo/interact.py` 中的 `SessionState`、`parse_ask_command`、`handle_*` 函数，避免重复实现。
 
 ### 2.2 Session 管理
