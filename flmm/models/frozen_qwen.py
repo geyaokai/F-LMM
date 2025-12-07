@@ -1,3 +1,4 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -33,6 +34,7 @@ class FrozenQwen(BaseModel):
         with LoadWoInit():
             self.qwen_model = BUILDER.build(model)
         self.qwen_model.requires_grad_(False)
+        self._qwen_device = torch.device('cpu')
         
         # Tokenizer: 可以是 AutoProcessor.tokenizer 或独立的 Qwen2VLTokenizer
         if processor is not None:
@@ -167,7 +169,7 @@ class FrozenQwen(BaseModel):
         - Processor 本身就是 tokenizer
         """
         # 获取输入数据
-        input_ids = data_sample['input_ids'].to(self.qwen_model.device)
+        input_ids = data_sample['input_ids'].to(self.qwen_device)
         
         # 找到视觉区域的 token 位置
         # Qwen2.5-VL 使用 <|vision_start|> 和 <|vision_end|> 标记图像区域
@@ -222,6 +224,25 @@ class FrozenQwen(BaseModel):
                 tokens = output
         if tokens is not None:
             self._last_vision_tokens = tokens.detach()
+
+    @property
+    def qwen_device(self) -> torch.device:
+        device_attr = getattr(self.qwen_model, 'device', None)
+        if device_attr is not None:
+            try:
+                return torch.device(device_attr)
+            except (TypeError, RuntimeError):
+                pass
+        try:
+            first_param = next(self.qwen_model.parameters())
+            if first_param is not None:
+                return first_param.device
+        except StopIteration:
+            pass
+        return self._qwen_device
+
+    def set_qwen_device(self, device: torch.device):
+        self._qwen_device = torch.device(device)
 
 
 class FrozenQwenSAM(FrozenQwen):
@@ -353,15 +374,15 @@ class FrozenQwenSAM(FrozenQwen):
             images=[image],
             return_tensors='pt',
             padding=False)
-        input_ids = inputs['input_ids'].to(self.qwen_model.device)
+        input_ids = inputs['input_ids'].to(self.qwen_device)
         pixel_values = inputs['pixel_values'].to(
-            device=self.qwen_model.device, dtype=self.qwen_model.dtype)
-        image_grid_thw = inputs['image_grid_thw'].to(self.qwen_model.device)
+            device=self.qwen_device, dtype=self.qwen_model.dtype)
+        image_grid_thw = inputs['image_grid_thw'].to(self.qwen_device)
         attention_mask = inputs.get('attention_mask')
         if attention_mask is None:
             attention_mask = torch.ones_like(input_ids)
         else:
-            attention_mask = attention_mask.to(self.qwen_model.device)
+            attention_mask = attention_mask.to(self.qwen_device)
         pad_id = self.tokenizer.pad_token_id
         if pad_id is None:
             pad_id = self.tokenizer.eos_token_id
@@ -379,7 +400,7 @@ class FrozenQwenSAM(FrozenQwen):
         )
         input_len = input_ids.shape[-1]
         output_ids = sequences[0, input_len:].detach().cpu()
-        output_text = self.tokenizer.decode(output_ids, skip_special_tokens=False)
+        output_text = self.tokenizer.decode(output_ids, skip_special_tokens=True)
         full_attention_mask = torch.ones_like(sequences)
         # outputs: Seq2SeqLMOutput
         # outputs.attentions shape is [num_layers, batch, num_heads, seq_len, seq_len]
@@ -419,12 +440,14 @@ class FrozenQwenSAM(FrozenQwen):
         hidden_states = hidden_states[generation_slice]
         meta_data = self._build_meta_data(image, image_grid_thw)
         vision_tokens = self._last_vision_tokens
+        grid_snapshot = image_grid_thw.detach().cpu()
         return dict(output_ids=output_ids,
                     output_text=output_text,
                     hidden_states=hidden_states,
                     attention_maps=attention_maps,
                     meta_data=meta_data,
-                    vision_tokens=vision_tokens)
+                    vision_tokens=vision_tokens,
+                    image_grid_thw=grid_snapshot)
 
     @torch.no_grad()
     def ground(self, image, positive_ids, hidden_states, attention_maps, meta_data,
@@ -456,6 +479,126 @@ class FrozenQwenSAM(FrozenQwen):
             sam_pred_masks = pred_masks
         return pred_masks, sam_pred_masks
 
+    @torch.no_grad()
+    def visual_cot_resample(self,
+                            image,
+                            question: str,
+                            bbox: Tuple[float, float, float, float],
+                            answer_cache: Optional[Dict] = None,
+                            extra_prompt: str = '',
+                            max_new_tokens: Optional[int] = None) -> Dict:
+        """
+        Visual Chain-of-Thought re-sampling using cached Qwen vision tokens.
+        """
+        assert self._generation_ready
+        if answer_cache is None:
+            if image is None:
+                raise ValueError("image is required when answer_cache is None")
+            answer_cache = self.answer(image, question, max_new_tokens=self.max_new_tokens)
+        vision_tokens = answer_cache.get('vision_tokens')
+        if vision_tokens is None:
+            raise ValueError("vision_tokens missing from answer_cache; ensure answer() captured them.")
+        meta_data = answer_cache['meta_data']
+        image_grid = answer_cache.get('image_grid_thw')
+        token_bank = vision_tokens[0] if vision_tokens.dim() == 3 else vision_tokens
+        total_tokens = token_bank.shape[0]
+        if image_grid is not None:
+            grid_tensor = image_grid[0] if image_grid.dim() == 2 else image_grid
+            grid_h = int(grid_tensor[1].item())
+            grid_w = int(grid_tensor[2].item())
+            qwen_h = max(1, grid_h // self.merge_size)
+            qwen_w = max(1, grid_w // self.merge_size)
+        else:
+            processed_h = int(meta_data['image_shape']['height'])
+            patch_extent = self.patch_size * self.merge_size
+            qwen_h = max(1, processed_h // patch_extent)
+            qwen_w = max(1, total_tokens // qwen_h)
+        assert qwen_h * qwen_w == total_tokens, \
+            f"vision token shape mismatch: {qwen_h}x{qwen_w} != {total_tokens}"
+        x0, y0, x1, y1 = [float(v) for v in bbox]
+        orig_h = float(meta_data['original_shape']['height'])
+        orig_w = float(meta_data['original_shape']['width'])
+        x0 = min(max(0.0, x0), orig_w)
+        x1 = min(max(0.0, x1), orig_w)
+        y0 = min(max(0.0, y0), orig_h)
+        y1 = min(max(0.0, y1), orig_h)
+        if x1 <= x0:
+            x1 = min(orig_w, x0 + 1.0)
+        if y1 <= y0:
+            y1 = min(orig_h, y0 + 1.0)
+        scale_h, scale_w = meta_data.get('scale_factor', (1.0, 1.0))
+        proc_x0, proc_x1 = x0 * scale_w, x1 * scale_w
+        proc_y0, proc_y1 = y0 * scale_h, y1 * scale_h
+        patch_extent = self.patch_size * self.merge_size
+        col_start = max(0, min(qwen_w - 1, int(math.floor(proc_x0 / patch_extent))))
+        col_end = max(col_start + 1, min(qwen_w, int(math.ceil(proc_x1 / patch_extent))))
+        row_start = max(0, min(qwen_h - 1, int(math.floor(proc_y0 / patch_extent))))
+        row_end = max(row_start + 1, min(qwen_h, int(math.ceil(proc_y1 / patch_extent))))
+        token_map = token_bank.view(qwen_h, qwen_w, -1)
+        roi_tokens = token_map[row_start:row_end, col_start:col_end].contiguous().view(-1, token_map.shape[-1])
+        if roi_tokens.numel() == 0:
+            raise ValueError("ROI produced zero tokens; please enlarge bbox.")
+        roi_token_count = roi_tokens.shape[0]
+        roi_placeholder = '<|vision_start|>' + '<|image_pad|>' * roi_token_count + '<|vision_end|>'
+        system_prompt = self._sanitize_prompt_text(self.prompt_template.get('SYSTEM', '').strip())
+        user_query = question.strip()
+        if extra_prompt:
+            user_query = f"{user_query} {extra_prompt}".strip()
+        if self.additional_prompt:
+            user_query = f"{user_query} {self.additional_prompt}".strip()
+        if not user_query:
+            user_query = "Describe the selected region."
+        prompt_parts = []
+        if system_prompt:
+            prompt_parts.append("<|im_start|>system\n")
+            prompt_parts.append(system_prompt)
+            prompt_parts.append("\n<|im_end|>\n")
+        prompt_parts.append("<|im_start|>user\n")
+        prompt_parts.append(
+            f"{roi_placeholder}\n{user_query}\nFocus on the visual context above when answering.\n")
+        prompt_parts.append("<|im_end|>\n<|im_start|>assistant\n")
+        prompt_text = ''.join(prompt_parts)
+        tokenizer_out = self.tokenizer(prompt_text, return_tensors='pt', add_special_tokens=False)
+        device = self.qwen_device
+        input_ids = tokenizer_out['input_ids'].to(device)
+        attention_mask = tokenizer_out.get('attention_mask')
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_ids)
+        else:
+            attention_mask = attention_mask.to(device)
+        inputs_embeds = self.qwen_model.model.embed_tokens(input_ids).to(device=device,
+                                                                        dtype=self.qwen_model.dtype)
+        pad_positions = torch.nonzero(input_ids == self.image_pad_id, as_tuple=False)
+        assert pad_positions.shape[0] == roi_token_count, \
+            f"pad count {pad_positions.shape[0]} != roi tokens {roi_token_count}"
+        roi_embeds = roi_tokens.to(device=device, dtype=inputs_embeds.dtype)
+        inputs_embeds[pad_positions[:, 0], pad_positions[:, 1]] = roi_embeds
+        pad_id = self.tokenizer.pad_token_id or self.tokenizer.eos_token_id
+        seq = self.qwen_model.generate(
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            max_new_tokens=max_new_tokens or self.max_new_tokens,
+            eos_token_id=self.tokenizer.eos_token_id,
+            pad_token_id=pad_id,
+            do_sample=False,
+        )
+        input_len = input_ids.shape[-1]
+        if seq.shape[-1] > input_len:
+            gen_slice = seq[0, input_len:]
+        else:
+            # When generate() is driven purely by inputs_embeds, HF returns only new tokens.
+            gen_slice = seq[0]
+        output_ids = gen_slice.detach().cpu()
+        answer_text = self.tokenizer.decode(output_ids, skip_special_tokens=True)
+        roi_bbox = (int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1)))
+        return dict(
+            thought=answer_cache.get('output_text', ''),
+            roi_bbox=roi_bbox,
+            roi_context=roi_tokens.detach().cpu(),
+            answer_text=answer_text,
+            prompt=prompt_text,
+            roi_patch_bounds=(row_start, row_end, col_start, col_end))
+
     def _forward(self, data_sample):
         """
         前向传播函数：从输入数据样本生成预测的 mask
@@ -481,7 +624,7 @@ class FrozenQwenSAM(FrozenQwen):
             # 直接使用 data_sample 中准备好的数据
             # Dataset 已经通过 processor 处理好了所有必要的输入
             model_kwargs = {
-                'input_ids': input_ids.to(self.qwen_model.device),
+                'input_ids': input_ids.to(self.qwen_device),
                 'output_hidden_states': True,
                 'output_attentions': True,
                 'return_dict': True,
@@ -490,20 +633,20 @@ class FrozenQwenSAM(FrozenQwen):
             # 添加 pixel_values（必需）
             # pixel_values: [grid_t * grid_h * grid_w, channel * temporal_patch_size(2) * patch_size(14) * patch_size(14)]
             pixel_values = data_sample['pixel_values']
-            model_kwargs['pixel_values'] = pixel_values.to(self.qwen_model.device)
+            model_kwargs['pixel_values'] = pixel_values.to(self.qwen_device)
             # 添加 image_grid_thw（Qwen2.5-VL 必需）
             image_grid_thw = data_sample['image_grid_thw']
-            model_kwargs['image_grid_thw'] = image_grid_thw.to(self.qwen_model.device)
+            model_kwargs['image_grid_thw'] = image_grid_thw.to(self.qwen_device)
             assert model_kwargs['image_grid_thw'].shape==(1, 3), "image_grid_thw should be (1, 3)"
             
             # 添加 attention_mask（可选,真实的是没有）
             if 'attention_mask' in data_sample:
-                model_kwargs['attention_mask'] = data_sample['attention_mask'].to(self.qwen_model.device)
+                model_kwargs['attention_mask'] = data_sample['attention_mask'].to(self.qwen_device)
             
             outputs = self.qwen_model(**model_kwargs)
         
         # ========== 步骤 3: 提取和处理注意力 ==========
-        mask_ids = data_sample['mask_ids'].to(self.qwen_model.device)
+        mask_ids = data_sample['mask_ids'].to(self.qwen_device)
         meta_data = data_sample['meta_data']
         
         # 提取对图像 token 的注意力
@@ -660,7 +803,7 @@ class FrozenQwenSAM(FrozenQwen):
         for data_sample in data:
             forward_output = self._forward(data_sample)
             pred_masks, sam_pred_masks = forward_output['pred_masks'], forward_output['sam_pred_masks']
-            masks = data_sample['masks'].to(self.qwen_model.device)
+            masks = data_sample['masks'].to(self.qwen_device)
             gt_masks = F.interpolate(masks[None].float(),
                                      size=pred_masks.shape[-2:])[0].to(pred_masks)
             sam_gt_masks = F.interpolate(masks[None].float(),

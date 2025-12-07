@@ -50,6 +50,7 @@ Commands:
   ask <question>
   ground <idx ...>
   inspect <idx> [prompt]
+  cot <idx> <question>
   help
   exit / quit
 ```
@@ -111,7 +112,20 @@ The umbrella is leaning against the counter near the woman in green.
 
 可自定义 prompt，若省略则使用 `--inspect-prompt`。
 
-### 3.5 其他命令
+### 3.5 `cot <idx> <question>`
+
+对已 Ground 的 ROI 复用缓存的视觉 token，直接在原图上做 Visual CoT Re-sample，无需重新截取/编码：
+
+```
+>> cot 0 How many heart patterns are on the cushion?
+[CoT #0] There is only one heart-shaped pattern on the cushion.
+```
+
+- 使用与 `ground` 相同的 bbox，调用 `FrozenQwenSAM.visual_cot_resample()`；
+- 仅替换 ROI token 后续生成回答，可快速反复追问局部细节；
+- 输出格式固定为 `[CoT #idx] <answer_text>`。
+
+### 3.6 其他命令
 
 - `help`：显示指令列表；
 - `exit` / `quit` / `Ctrl+D` / `Ctrl+C`：退出并打印 `[Exit]`。

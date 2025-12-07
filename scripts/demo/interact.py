@@ -10,6 +10,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+try:  # Enable arrow-key editing when readline exists.
+    import readline  # noqa: F401
+except ImportError:
+    readline = None  # type: ignore
+
 import numpy as np
 import torch
 from PIL import Image
@@ -40,6 +45,7 @@ class GroundRecord:
     token_span: Tuple[int, int]
     char_span: Tuple[int, int]
     roi_image: Optional[Image.Image]
+    bbox: Optional[Tuple[int, int, int, int]] = None
 
 
 @dataclass
@@ -104,12 +110,11 @@ def move_auxiliary_modules(model, device: torch.device):
 
 
 def infer_qwen_primary_device(qwen_model, fallback_device: torch.device) -> torch.device:
+    # Prefer qwen_model.device property if it exists and is valid.
     existing = getattr(qwen_model, 'device', None)
     if existing is not None:
         try:
-            device = torch.device(existing)
-            qwen_model.device = device
-            return device
+            return torch.device(existing)
         except (TypeError, RuntimeError):
             pass
     device_map = getattr(qwen_model, 'hf_device_map', None)
@@ -121,7 +126,6 @@ def infer_qwen_primary_device(qwen_model, fallback_device: torch.device) -> torc
             device = fallback_device
     else:
         device = fallback_device
-    qwen_model.device = device
     return device
 
 
@@ -176,7 +180,9 @@ def load_model(cfg, args):
         model = model.to(target_device)
         qwen_device = target_device
     model = model.eval()
-    model.qwen_model.device = qwen_device
+    # cache the inferred device on FrozenQwen to avoid repeated heuristics
+    if hasattr(model, 'set_qwen_device'):
+        model.set_qwen_device(qwen_device)
     append_prompt = args.extra_prompt or ''
     model._prepare_for_generation(
         image_processor=cfg.image_processor,
@@ -187,10 +193,26 @@ def load_model(cfg, args):
     return model
 
 
+def resolve_image_path(path_str: str) -> Path:
+    raw = Path(path_str).expanduser()
+    candidates: List[Path] = []
+    if raw.is_absolute():
+        candidates.append(raw)
+    else:
+        candidates.append(Path.cwd() / raw)
+        parts = raw.parts
+        if parts and parts[0] == REPO_ROOT.name:
+            tail = Path(*parts[1:]) if len(parts) > 1 else Path('.')
+            candidates.append(REPO_ROOT / tail)
+    for cand in candidates:
+        resolved = cand.resolve(strict=False)
+        if resolved.exists():
+            return resolved
+    raise FileNotFoundError(candidates[-1] if candidates else raw)
+
+
 def load_image(path_str: str) -> Image.Image:
-    path = Path(path_str).expanduser().resolve()
-    if not path.exists():
-        raise FileNotFoundError(path)
+    path = resolve_image_path(path_str)
     image = Image.open(path).convert('RGB')
     return image
 
@@ -210,12 +232,12 @@ def extract_phrases_via_model(model, answer_text: str, max_tokens: int, limit: i
     )
     encoded = model.tokenizer(
         prompt, return_tensors='pt', add_special_tokens=False)
-    input_ids = encoded['input_ids'].to(model.qwen_model.device)
+    input_ids = encoded['input_ids'].to(model.qwen_device)
     attention_mask = encoded.get('attention_mask')
     if attention_mask is None:
         attention_mask = torch.ones_like(input_ids)
     else:
-        attention_mask = attention_mask.to(model.qwen_model.device)
+        attention_mask = attention_mask.to(model.qwen_device)
     pad_id = model.tokenizer.pad_token_id or model.tokenizer.eos_token_id
     outputs = model.qwen_model.generate(
         input_ids=input_ids,
@@ -363,7 +385,8 @@ def save_ground_outputs(image: Image.Image,
             phrase_text=phrase_text,
             token_span=(0, 0),
             char_span=(0, 0),
-            roi_image=roi_image))
+            roi_image=roi_image,
+            bbox=bbox))
     combined = blend_mask(base_np, masks.sum(axis=0) > 0, (255, 128, 0))
     Image.fromarray(combined.astype(np.uint8)).save(run_dir / 'summary.png')
     return records
@@ -478,12 +501,39 @@ def handle_inspect(session: SessionState, idx: int, question: Optional[str]):
     print(f'[Inspect #{idx}] {output["output_text"]}')
 
 
+def handle_cot_resample(session: SessionState, idx: int, question: str):
+    ensure_image(session)
+    if session.last_answer is None or not session.last_records:
+        print('[CoT] Run `ask` and `ground` before re-sampling.')
+        return
+    question = question.strip()
+    if not question:
+        print('[CoT] Question must not be empty.')
+        return
+    if idx < 0 or idx >= len(session.last_records):
+        print(f'[CoT] Invalid mask index {idx}.')
+        return
+    record = session.last_records[idx]
+    if record.bbox is None:
+        print('[CoT] Selected mask has no valid ROI bbox.')
+        return
+    print(f'[CoT] Resampling ROI #{idx} with question: {question}')
+    result = session.model.visual_cot_resample(
+        image=session.current_image,
+        question=question,
+        bbox=record.bbox,
+        answer_cache=session.last_answer,
+        max_new_tokens=session.args.max_new_tokens)
+    print(f'[CoT #{idx}] {result["answer_text"]}')
+
+
 def print_help():
     print('Commands:')
     print('  load <image_path>        Load image for the current session.')
     print('  ask <question>           Ask Qwen about the loaded image.')
     print('  ground <idx ...>         Ground one or more phrase indices from the last answer.')
     print('  inspect <idx> [prompt]   Run answer() on ROI cropped from mask idx.')
+    print('  cot <idx> <question>     Re-sample ROI tokens for mask idx and ask a follow-up question.')
     print('  help                     Show this message.')
     print('  exit / quit              Terminate the demo.')
 
@@ -552,6 +602,18 @@ def main():
                     continue
                 question = ' '.join(tokens[1:]) if len(tokens) > 1 else ''
                 handle_inspect(session, mask_idx, question)
+            elif cmd == 'cot':
+                tokens = shlex.split(arg_str)
+                if len(tokens) < 2:
+                    print('[CoT] Usage: cot <idx> <question>')
+                    continue
+                try:
+                    cot_idx = int(tokens[0])
+                except ValueError:
+                    print('[CoT] First argument must be an integer index.')
+                    continue
+                cot_question = ' '.join(tokens[1:])
+                handle_cot_resample(session, cot_idx, cot_question)
             else:
                 print(f'[Warn] Unknown command "{cmd}". Type `help` for usage.')
         except Exception as exc:
