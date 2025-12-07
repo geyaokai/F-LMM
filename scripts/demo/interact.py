@@ -53,6 +53,7 @@ class AskCommand:
     mode: str  # 'default', 'roi', 'cot'
     index: Optional[int]
     question: str
+    reset_history: bool = False
 
 
 @dataclass
@@ -67,6 +68,7 @@ class SessionState:
     token_offsets: Optional[List[Tuple[int, int]]] = None
     ground_counter: int = 0
     last_records: List[GroundRecord] = field(default_factory=list)
+    history: List[Dict[str, str]] = field(default_factory=list)
 
     def __post_init__(self):
         self.session_dir = self.result_root / datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -77,6 +79,29 @@ class SessionState:
         self.phrases = []
         self.token_offsets = None
         self.last_records = []
+        self.history.clear()
+
+
+def append_history_entry(session: SessionState, role: str, text: str):
+    text = (text or '').strip()
+    if not text or session.args.max_history_turns <= 0:
+        return
+    session.history.append({'role': role, 'text': text})
+    limit = max(session.args.max_history_turns * 2, 0)
+    if limit > 0 and len(session.history) > limit:
+        session.history = session.history[-limit:]
+
+
+def clear_history(session: SessionState):
+    if session.history:
+        session.history.clear()
+        print('[History] Cleared conversation context.')
+    else:
+        print('[History] Context already empty.')
+
+
+def history_turns(session: SessionState) -> int:
+    return len(session.history) // 2
 
 
 def parse_device_map_arg(raw_value: Optional[str]) -> Optional[str]:
@@ -161,6 +186,8 @@ def parse_args():
     parser.add_argument('--no-sam', action='store_true', help='Skip SAM refinement.')
     parser.add_argument('--extra-prompt', default='',
                         help='Force append text to every question (default: empty).')
+    parser.add_argument('--max-history-turns', type=int, default=4,
+                        help='Number of previous QA turns to keep in context (default: 4, 0 to disable).')
     return parser.parse_args()
 
 
@@ -196,6 +223,7 @@ def load_model(cfg, args):
         prompt_template=cfg.prompt_template,
         max_new_tokens=args.max_new_tokens,
         additional_prompt=append_prompt,
+        max_history_turns=args.max_history_turns,
     )
     return model
 
@@ -218,16 +246,17 @@ def resolve_image_path(path_str: str) -> Path:
     raise FileNotFoundError(candidates[-1] if candidates else raw)
 
 
-def load_image(path_str: str) -> Image.Image:
+def load_image(path_str: str) -> Tuple[Image.Image, Path]:
     path = resolve_image_path(path_str)
     image = Image.open(path).convert('RGB')
-    return image
+    return image, path
 
 
 def parse_ask_command(arg_str: str) -> AskCommand:
     parser = argparse.ArgumentParser(prog='ask', add_help=False, exit_on_error=False)
     parser.add_argument('--roi', type=int, default=None)
     parser.add_argument('--cot', type=int, default=None)
+    parser.add_argument('--reset-history', action='store_true')
     parser.add_argument('question', nargs='*')
     tokens = shlex.split(arg_str)
     try:
@@ -238,10 +267,13 @@ def parse_ask_command(arg_str: str) -> AskCommand:
         raise ValueError('不能同时指定 --roi 与 --cot。')
     question = ' '.join(opts.question).strip()
     if opts.roi is not None:
-        return AskCommand(mode='roi', index=opts.roi, question=question)
+        return AskCommand(mode='roi', index=opts.roi, question=question,
+                          reset_history=opts.reset_history)
     if opts.cot is not None:
-        return AskCommand(mode='cot', index=opts.cot, question=question)
-    return AskCommand(mode='default', index=None, question=question)
+        return AskCommand(mode='cot', index=opts.cot, question=question,
+                          reset_history=opts.reset_history)
+    return AskCommand(mode='default', index=None, question=question,
+                      reset_history=opts.reset_history)
 
 
 def extract_phrases_via_model(model, answer_text: str, max_tokens: int, limit: int) -> List[str]:
@@ -425,9 +457,9 @@ def ensure_image(session: SessionState):
 
 
 def handle_load(session: SessionState, path: str):
-    image = load_image(path)
+    image, resolved = load_image(path)
     session.current_image = image
-    session.current_image_path = Path(path).expanduser().resolve()
+    session.current_image_path = resolved
     session.reset_answer()
     print(f'[Load] Image loaded: {session.current_image_path.name} {image.size}')
 
@@ -439,6 +471,8 @@ def handle_ask(session: SessionState, question: str):
         print(f'[Ask] {exc}')
         print('[Ask] 用法: ask [--roi idx | --cot idx] <question>')
         return
+    if ask_cmd.mode in {'roi', 'cot'} and ask_cmd.reset_history:
+        print('[Ask] --reset-history 仅适用于普通问答，将被忽略。')
     if ask_cmd.mode == 'roi':
         handle_inspect(session, ask_cmd.index, ask_cmd.question)
         return
@@ -449,6 +483,8 @@ def handle_ask(session: SessionState, question: str):
         handle_cot_resample(session, ask_cmd.index, ask_cmd.question)
         return
     ensure_image(session)
+    if ask_cmd.reset_history:
+        clear_history(session)
     if not ask_cmd.question:
         print('[Ask] Question must not be empty.')
         return
@@ -456,6 +492,7 @@ def handle_ask(session: SessionState, question: str):
     output = session.model.answer(
         image=session.current_image,
         question=ask_cmd.question,
+        history=session.history,
         max_new_tokens=session.args.max_new_tokens)
     answer_text = output['output_text']
     print(f'[Answer]\n{answer_text}\n')
@@ -467,6 +504,11 @@ def handle_ask(session: SessionState, question: str):
     session.token_offsets = offsets
     session.phrases = candidates
     session.last_records = []
+    append_history_entry(session, 'user', ask_cmd.question)
+    append_history_entry(session, 'assistant', answer_text)
+    turns = history_turns(session)
+    if turns > 0:
+        print(f'[Ask] 当前上下文包含 {turns} 轮对话。')
     if not candidates:
         print('[Ask] No candidate phrases detected.')
     else:
@@ -539,8 +581,14 @@ def handle_inspect(session: SessionState, idx: int, question: Optional[str]):
     output = session.model.answer(
         image=roi,
         question=prompt,
+        history=session.history,
         max_new_tokens=session.args.max_new_tokens)
     print(f'[Inspect #{idx}] {output["output_text"]}')
+    append_history_entry(session, 'user', f'[ROI #{idx}] {prompt}')
+    append_history_entry(session, 'assistant', output['output_text'])
+    turns = history_turns(session)
+    if turns > 0:
+        print(f'[Inspect] 当前上下文包含 {turns} 轮对话。')
 
 
 def handle_cot_resample(session: SessionState, idx: int, question: str):
@@ -567,18 +615,25 @@ def handle_cot_resample(session: SessionState, idx: int, question: str):
         answer_cache=session.last_answer,
         max_new_tokens=session.args.max_new_tokens)
     print(f'[CoT #{idx}] {result["answer_text"]}')
+    append_history_entry(session, 'user', f'[CoT #{idx}] {question}')
+    append_history_entry(session, 'assistant', result['answer_text'])
+    turns = history_turns(session)
+    if turns > 0:
+        print(f'[CoT] 当前上下文包含 {turns} 轮对话。')
 
 
 def print_help():
     print('Commands:')
     print('  load <image_path>        Load image for the current session.')
-    print('  ask <question>           Ask Qwen about the loaded image.')
+    print('  ask <question>           Ask Qwen about the loaded image (multi-turn context kept).')
+    print('  ask --reset-history ...  Clear context before asking the next question.')
     print('  ask --roi <idx> [prompt] Ask on a grounded ROI (alias of legacy inspect).')
     print('  ask --cot <idx> <question>')
     print('                          Visual CoT re-sample using cached tokens (alias of legacy cot).')
     print('  ground <idx ...>         Ground one or more phrase indices from the last answer.')
     print('  inspect <idx> [prompt]   (Legacy) Same as ask --roi <idx> [prompt].')
     print('  cot <idx> <question>     (Legacy) Same as ask --cot <idx> <question>.')
+    print('  clear                    Clear stored multi-turn conversation context.')
     print('  help                     Show this message.')
     print('  exit / quit              Terminate the demo.')
 
@@ -632,6 +687,8 @@ def main():
                         print('[Ground] Indices must be integers.')
                         continue
                     handle_ground(session, indices)
+            elif cmd == 'clear':
+                clear_history(session)
             elif cmd == 'inspect':
                 if not arg_str:
                     print('[Inspect] Usage: inspect <idx> [prompt]')

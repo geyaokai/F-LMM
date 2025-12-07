@@ -39,6 +39,7 @@ python scripts/demo/interact.py \
 | `--inspect-prompt` | `inspect` 命令默认提示词 |
 | `--no-sam` | 只看 UNet 粗掩码，不调用 SAM |
 | `--extra-prompt` | 额外追加在每次提问后缀的文本（默认空字符串，可保持 CLI 简洁）。 |
+| `--max-history-turns` | 多轮对话时最多保留的问答轮数（默认 4，设为 0 可禁用上下文）。 |
 
 ## 3. 交互命令
 
@@ -48,11 +49,13 @@ python scripts/demo/interact.py \
 Commands:
   load <image_path>
   ask <question>
+  ask --reset-history <question>
   ask --roi <idx> [prompt]
   ask --cot <idx> <question>
   ground <idx ...>
   inspect <idx> [prompt]   (legacy, same as ask --roi)
   cot <idx> <question>     (legacy, same as ask --cot)
+  clear
   help
   exit / quit
 ```
@@ -103,7 +106,17 @@ The umbrella is leaning against the counter near the woman in green.
 - 每个 round 会生成 `overlay_XX.png`, `mask_XX.png`, `roi_XX.png`（若为空 mask 则无 ROI），以及 `summary.png`；
 - 若启用 SAM，展示的是 `sam_masks`；使用 `--no-sam` 时仅保存 UNet 粗掩码。
 
-### 3.4 `ask --roi <idx> [prompt]`
+### 3.4 多轮上下文与 `ask --reset-history`
+
+`ask` 默认会把每轮问答（包括 `ask --roi` / `ask --cot` 的变体）缓存到多轮历史里，并在下一次调用时一并送入 Qwen。CLI 会在回答后提示“当前上下文包含 N 轮对话”。
+
+- 使用 `ask --reset-history ...` 在发问前清空历史；
+- 或在任何时候运行 `clear` 指令手动清除；
+- `--max-history-turns` 控制最多保留多少轮（0 表示完全关闭上下文）。
+
+历史只包含文本，不会重复插入图片 token；只有当前 `ask` 的 `<image>` turn 实际携带图像。
+
+### 3.5 `ask --roi <idx> [prompt]`
 
 对 `ground` 保存的 ROI 再次提问（即旧版 `inspect`）：
 
@@ -114,7 +127,7 @@ The umbrella is leaning against the counter near the woman in green.
 
 可自定义 prompt，若省略则使用 `--inspect-prompt`；`inspect <idx> [prompt]` 仍可用，会提醒改用 `ask --roi`。
 
-### 3.5 `ask --cot <idx> <question>`
+### 3.6 `ask --cot <idx> <question>`
 
 对已 Ground 的 ROI 复用缓存的视觉 token，直接在原图上做 Visual CoT Re-sample，无需重新截取/编码（即旧版 `cot` 指令）：
 
@@ -127,10 +140,11 @@ The umbrella is leaning against the counter near the woman in green.
 - 仅替换 ROI token 后续生成回答，可快速反复追问局部细节；
 - 输出格式固定为 `[CoT #idx] <answer_text>`；`cot <idx> <question>` 仍支持，但会提示改用 `ask --cot`。
 
-### 3.6 其他命令
+### 3.7 其他命令
 
 - `help`：显示指令列表；
 - `exit` / `quit` / `Ctrl+D` / `Ctrl+C`：退出并打印 `[Exit]`。
+- `clear`：随时清空多轮对话上下文。
 
 ## 4. 目录结构
 

@@ -276,6 +276,7 @@ class FrozenQwenSAM(FrozenQwen):
         self.prompt_template: Dict[str, str] = {}
         self.additional_prompt: str = ''
         self.max_new_tokens: int = 256
+        self.max_history_turns: int = 0
 
     def get_text_layer_weights(self):
         """获取文本层权重（softmax 归一化）"""
@@ -301,7 +302,10 @@ class FrozenQwenSAM(FrozenQwen):
             'original_shape': {'height': original_h, 'width': original_w},
         }
 
-    def _build_conversation(self, image, question: str) -> List[Dict]:
+    def _build_conversation(self,
+                            image,
+                            question: str,
+                            history: Optional[List[Dict[str, str]]] = None) -> List[Dict]:
         query = question.strip()
         if self.additional_prompt:
             query = f"{query} {self.additional_prompt}".strip()
@@ -313,6 +317,22 @@ class FrozenQwenSAM(FrozenQwen):
             conversation.append({
                 'role': 'system',
                 'content': [{'type': 'text', 'text': system_prompt}]
+            })
+        history_entries: List[Dict[str, str]] = []
+        if history:
+            history_entries = history
+            if self.max_history_turns > 0:
+                limit = max(self.max_history_turns * 2, 0)
+                if limit > 0 and len(history_entries) > limit:
+                    history_entries = history_entries[-limit:]
+        for item in history_entries:
+            text = self._sanitize_prompt_text(item.get('text', '').strip())
+            if not text:
+                continue
+            role = item.get('role', 'user')
+            conversation.append({
+                'role': role,
+                'content': [{'type': 'text', 'text': text}]
             })
         conversation.append({
             'role': 'user',
@@ -349,6 +369,7 @@ class FrozenQwenSAM(FrozenQwen):
                                 prompt_template,
                                 max_new_tokens=256,
                                 additional_prompt='',
+                                max_history_turns=0,
                                 **kwargs):
         if isinstance(image_processor, dict):
             self.processor = BUILDER.build(image_processor)
@@ -359,14 +380,16 @@ class FrozenQwenSAM(FrozenQwen):
         self.prompt_template = prompt_template or {}
         self.max_new_tokens = max_new_tokens
         self.additional_prompt = self._sanitize_prompt_text(additional_prompt or '')
+        self.max_history_turns = max(0, int(max_history_turns or 0))
         self._generation_ready = True
         self._ensure_vision_hook()
 
     @torch.no_grad()
-    def answer(self, image, question, max_new_tokens=None, **kwargs):
+    def answer(self, image, question, history: Optional[List[Dict[str, str]]] = None,
+               max_new_tokens=None, **kwargs):
         assert self._generation_ready
         self._last_vision_tokens = None
-        conversation = self._build_conversation(image, question)
+        conversation = self._build_conversation(image, question, history=history)
         prompt_text = self.processor.apply_chat_template(
             conversation, tokenize=False, add_generation_prompt=True)
         inputs = self.processor(
