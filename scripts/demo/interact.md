@@ -48,9 +48,11 @@ python scripts/demo/interact.py \
 Commands:
   load <image_path>
   ask <question>
+  ask --roi <idx> [prompt]
+  ask --cot <idx> <question>
   ground <idx ...>
-  inspect <idx> [prompt]
-  cot <idx> <question>
+  inspect <idx> [prompt]   (legacy, same as ask --roi)
+  cot <idx> <question>     (legacy, same as ask --cot)
   help
   exit / quit
 ```
@@ -101,29 +103,29 @@ The umbrella is leaning against the counter near the woman in green.
 - 每个 round 会生成 `overlay_XX.png`, `mask_XX.png`, `roi_XX.png`（若为空 mask 则无 ROI），以及 `summary.png`；
 - 若启用 SAM，展示的是 `sam_masks`；使用 `--no-sam` 时仅保存 UNet 粗掩码。
 
-### 3.4 `inspect <idx> [prompt]`
+### 3.4 `ask --roi <idx> [prompt]`
 
-对 `ground` 保存的 ROI 再次提问（Visual CoT）：
+对 `ground` 保存的 ROI 再次提问（即旧版 `inspect`）：
 
 ```
->> inspect 0 Describe the text on the umbrella.
+>> ask --roi 0 Describe the text on the umbrella.
 [Inspect #0] The umbrella shows the words "city cafe" in white.
 ```
 
-可自定义 prompt，若省略则使用 `--inspect-prompt`。
+可自定义 prompt，若省略则使用 `--inspect-prompt`；`inspect <idx> [prompt]` 仍可用，会提醒改用 `ask --roi`。
 
-### 3.5 `cot <idx> <question>`
+### 3.5 `ask --cot <idx> <question>`
 
-对已 Ground 的 ROI 复用缓存的视觉 token，直接在原图上做 Visual CoT Re-sample，无需重新截取/编码：
+对已 Ground 的 ROI 复用缓存的视觉 token，直接在原图上做 Visual CoT Re-sample，无需重新截取/编码（即旧版 `cot` 指令）：
 
 ```
->> cot 0 How many heart patterns are on the cushion?
+>> ask --cot 0 How many heart patterns are on the cushion?
 [CoT #0] There is only one heart-shaped pattern on the cushion.
 ```
 
 - 使用与 `ground` 相同的 bbox，调用 `FrozenQwenSAM.visual_cot_resample()`；
 - 仅替换 ROI token 后续生成回答，可快速反复追问局部细节；
-- 输出格式固定为 `[CoT #idx] <answer_text>`。
+- 输出格式固定为 `[CoT #idx] <answer_text>`；`cot <idx> <question>` 仍支持，但会提示改用 `ask --cot`。
 
 ### 3.6 其他命令
 

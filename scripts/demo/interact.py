@@ -49,6 +49,13 @@ class GroundRecord:
 
 
 @dataclass
+class AskCommand:
+    mode: str  # 'default', 'roi', 'cot'
+    index: Optional[int]
+    question: str
+
+
+@dataclass
 class SessionState:
     model: Any
     args: argparse.Namespace
@@ -215,6 +222,26 @@ def load_image(path_str: str) -> Image.Image:
     path = resolve_image_path(path_str)
     image = Image.open(path).convert('RGB')
     return image
+
+
+def parse_ask_command(arg_str: str) -> AskCommand:
+    parser = argparse.ArgumentParser(prog='ask', add_help=False, exit_on_error=False)
+    parser.add_argument('--roi', type=int, default=None)
+    parser.add_argument('--cot', type=int, default=None)
+    parser.add_argument('question', nargs='*')
+    tokens = shlex.split(arg_str)
+    try:
+        opts = parser.parse_args(tokens)
+    except (SystemExit, argparse.ArgumentError) as exc:
+        raise ValueError('无法解析 ask 参数。') from exc
+    if opts.roi is not None and opts.cot is not None:
+        raise ValueError('不能同时指定 --roi 与 --cot。')
+    question = ' '.join(opts.question).strip()
+    if opts.roi is not None:
+        return AskCommand(mode='roi', index=opts.roi, question=question)
+    if opts.cot is not None:
+        return AskCommand(mode='cot', index=opts.cot, question=question)
+    return AskCommand(mode='default', index=None, question=question)
 
 
 def extract_phrases_via_model(model, answer_text: str, max_tokens: int, limit: int) -> List[str]:
@@ -406,14 +433,29 @@ def handle_load(session: SessionState, path: str):
 
 
 def handle_ask(session: SessionState, question: str):
+    try:
+        ask_cmd = parse_ask_command(question)
+    except ValueError as exc:
+        print(f'[Ask] {exc}')
+        print('[Ask] 用法: ask [--roi idx | --cot idx] <question>')
+        return
+    if ask_cmd.mode == 'roi':
+        handle_inspect(session, ask_cmd.index, ask_cmd.question)
+        return
+    if ask_cmd.mode == 'cot':
+        if not ask_cmd.question:
+            print('[CoT] Question must not be empty.')
+            return
+        handle_cot_resample(session, ask_cmd.index, ask_cmd.question)
+        return
     ensure_image(session)
-    if not question.strip():
+    if not ask_cmd.question:
         print('[Ask] Question must not be empty.')
         return
     print('[Ask] Running Qwen...')
     output = session.model.answer(
         image=session.current_image,
-        question=question,
+        question=ask_cmd.question,
         max_new_tokens=session.args.max_new_tokens)
     answer_text = output['output_text']
     print(f'[Answer]\n{answer_text}\n')
@@ -531,9 +573,12 @@ def print_help():
     print('Commands:')
     print('  load <image_path>        Load image for the current session.')
     print('  ask <question>           Ask Qwen about the loaded image.')
+    print('  ask --roi <idx> [prompt] Ask on a grounded ROI (alias of legacy inspect).')
+    print('  ask --cot <idx> <question>')
+    print('                          Visual CoT re-sample using cached tokens (alias of legacy cot).')
     print('  ground <idx ...>         Ground one or more phrase indices from the last answer.')
-    print('  inspect <idx> [prompt]   Run answer() on ROI cropped from mask idx.')
-    print('  cot <idx> <question>     Re-sample ROI tokens for mask idx and ask a follow-up question.')
+    print('  inspect <idx> [prompt]   (Legacy) Same as ask --roi <idx> [prompt].')
+    print('  cot <idx> <question>     (Legacy) Same as ask --cot <idx> <question>.')
     print('  help                     Show this message.')
     print('  exit / quit              Terminate the demo.')
 
@@ -595,6 +640,7 @@ def main():
                 if not tokens:
                     print('[Inspect] Usage: inspect <idx> [prompt]')
                     continue
+                print('[Inspect] 建议改用 `ask --roi <idx> [prompt]`。')
                 try:
                     mask_idx = int(tokens[0])
                 except ValueError:
@@ -607,6 +653,7 @@ def main():
                 if len(tokens) < 2:
                     print('[CoT] Usage: cot <idx> <question>')
                     continue
+                print('[CoT] 建议改用 `ask --cot <idx> <question>`。')
                 try:
                     cot_idx = int(tokens[0])
                 except ValueError:

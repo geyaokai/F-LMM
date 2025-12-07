@@ -4,7 +4,8 @@
         "split": "val",
         "question_id": 0,
         "image": [
-            "cot/docvqa/xjpn0081_4.png",
+            "
+            ",
             "cot/docvqa/xjpn0081_4.png###[74, 398, 404, 1118]"
         ],
         "conversations": [
