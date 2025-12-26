@@ -1,41 +1,61 @@
-import sys
-from argparse import Namespace
-from pathlib import Path
-from PIL import Image
-from mmengine.config import Config
-sys.path.insert(0, str(Path('.').resolve()))
-from scripts.demo.interact import load_model  # imports your existing helpers
+from transformers import Qwen2_5_VLForConditionalGeneration, AutoTokenizer, AutoProcessor
+from qwen_vl_utils import process_vision_info
 
-cfg_path = Path('configs/qwen/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.py')
-roi_path = Path('scripts/demo/results/qwen/20251218_052356/round_03/roi_00.png')
-
-args = Namespace(
-    config=str(cfg_path),
-    checkpoint=None,
-    device='cuda',          # adjust to your device, e.g., cuda:0
-    device_map='auto',      # or 'none' if you want to keep everything on one GPU
-    device_max_memory=None,
-    image=None,
-    max_new_tokens=256,
-    phrase_max_tokens=64,
-    max_phrases=6,
-    results_dir='scripts/demo/results/qwen',
-    inspect_prompt='Describe this region in detail.',
-    no_sam=False,
-    extra_prompt='',
-    max_history_turns=0,
+# default: Load the model on the available device(s)
+model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+    "Qwen/Qwen2.5-VL-7B-Instruct", torch_dtype="auto", device_map="auto"
 )
 
-cfg = Config.fromfile(str(cfg_path))
-model = load_model(cfg, args)
+# We recommend enabling flash_attention_2 for better acceleration and memory saving, especially in multi-image and video scenarios.
+# model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+#     "Qwen/Qwen2.5-VL-7B-Instruct",
+#     torch_dtype=torch.bfloat16,
+#     attn_implementation="flash_attention_2",
+#     device_map="auto",
+# )
 
-img = Image.open(roi_path).convert('RGB')
-min_side = 28
-width, height = img.size
-scale = max(min_side / width, min_side / height)
-new_width = max(min_side, int(round(width * scale)))
-new_height = max(min_side, int(round(height * scale)))
-img = img.resize((new_width, new_height), Image.BICUBIC)
-out = model.answer(image=img, question='what is the color of it', history=None, max_new_tokens=args.max_new_tokens)
-print("OUTPUT_HAS_ADDCRITERION:", "addCriterion" in out["output_text"])
-print("OUTPUT_TEXT_REPR:", repr(out["output_text"]))
+# default processer
+processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
+
+# The default range for the number of visual tokens per image in the model is 4-16384.
+# You can set min_pixels and max_pixels according to your needs, such as a token range of 256-1280, to balance performance and cost.
+# min_pixels = 256*28*28
+# max_pixels = 1280*28*28
+# processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct", min_pixels=min_pixels, max_pixels=max_pixels)
+
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "image",
+                "image": "data/coco/val2017/000000000632.jpg",
+            },
+            {"type": "text", "text": "where is the shampoo?"},
+        ],
+    }
+]
+
+# Preparation for inference
+text = processor.apply_chat_template(
+    messages, tokenize=False, add_generation_prompt=True
+)
+image_inputs, video_inputs = process_vision_info(messages)
+inputs = processor(
+    text=[text],
+    images=image_inputs,
+    videos=video_inputs,
+    padding=True,
+    return_tensors="pt",
+)
+inputs = inputs.to("cuda")
+
+# Inference: Generation of the output
+generated_ids = model.generate(**inputs, max_new_tokens=128)
+generated_ids_trimmed = [
+    out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+]
+output_text = processor.batch_decode(
+    generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+)
+print(output_text)

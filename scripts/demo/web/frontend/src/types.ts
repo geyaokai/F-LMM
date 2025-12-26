@@ -36,6 +36,7 @@ export interface AskData {
   phrases?: PhraseItem[];
   history: HistoryItem[];
   history_turns?: number;
+  verification?: Verification;
 }
 
 export interface GroundRecord {
@@ -54,6 +55,18 @@ export interface GroundData {
   round_dir?: string | null;
   round_url?: string | null;
   history?: HistoryItem[];
+}
+
+export interface Verification {
+  trigger?: string;
+  used?: boolean;
+  roi_answer?: string;
+  roi_bbox?: number[];
+  roi_prompt?: string;
+  original_answer?: string;
+  error?: string;
+  records?: GroundRecord[];
+  [key: string]: any;
 }
 
 export interface ApiEnvelope<T> {

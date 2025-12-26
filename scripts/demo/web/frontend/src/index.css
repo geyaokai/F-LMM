@@ -236,6 +236,32 @@ select {
   line-height: 1.6;
 }
 
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid #e2e8f0;
+  margin-left: 8px;
+}
+
+.pill-ok {
+  background: #ecfdf3;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.pill-warn {
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #fed7aa;
+}
+
+.pill-muted {
+  background: #f8fafc;
+  color: #475569;
+}
+
 .phrases {
   border-top: 1px dashed #e2e8f0;
   padding-top: 10px;

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, defaultApiBase, withResultUrl } from "./api";
-import { AskData, GroundData, GroundRecord, PhraseItem, SessionPayload } from "./types";
+import { AskData, GroundData, GroundRecord, PhraseItem, SessionPayload, Verification } from "./types";
 
 type AskMode = "default" | "roi" | "cot";
 
@@ -45,6 +45,7 @@ function App() {
   const [answer, setAnswer] = useState<string>("");
   const [phrases, setPhrases] = useState<PhraseItem[]>([]);
   const [groundRecords, setGroundRecords] = useState<GroundRecord[]>([]);
+  const [verification, setVerification] = useState<Verification | null>(null);
   const [selectedPhrase, setSelectedPhrase] = useState<number | null>(null);
   const [imagePreview, setImagePreview] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState<string>("Idle");
@@ -73,6 +74,7 @@ function App() {
       setAnswer("");
       setPhrases([]);
       setGroundRecords([]);
+      setVerification(null);
       setSelectedPhrase(null);
       setImagePreview(undefined);
       setImageUrl("");
@@ -104,6 +106,8 @@ function App() {
       setSession(res.data);
       setImagePreview(deriveImageUrl(res.data, apiBase, file));
       setStatus(res.message || "Image loaded");
+      setVerification(null);
+      setGroundRecords([]);
       if (fileInputRef.current) {
         // 清空 file input，便于重复选择同一张图也能触发 onChange
         fileInputRef.current.value = "";
@@ -189,6 +193,10 @@ function App() {
       });
       setAnswer(res.data.answer || "");
       setPhrases(res.data.phrases || []);
+      setVerification(res.data.verification || null);
+      if (res.data.verification?.records) {
+        setGroundRecords(res.data.verification.records);
+      }
       if (res.data.history) {
         setSession((prev) => (prev ? { ...prev, history: res.data.history, history_turns: res.data.history_turns } : prev));
       }
@@ -339,8 +347,31 @@ function App() {
             </div>
             {answer && (
               <div className="answer">
-                <div className="label">Answer</div>
+                <div className="label">
+                  Answer{" "}
+                  {verification ? (
+                    <span
+                      className={`pill ${
+                        verification.used && verification.roi_answer
+                          ? "pill-ok"
+                          : verification.used
+                          ? "pill-warn"
+                          : "pill-muted"
+                      }`}
+                    >
+                      {verification.used && verification.roi_answer
+                        ? "roi re-answer"
+                        : verification.used
+                        ? "grounded"
+                        : "ground attempt"}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="answer-body">{answer}</div>
+                {verification?.original_answer && verification.roi_answer && verification.original_answer !== verification.roi_answer && (
+                  <div className="hint">Original: {verification.original_answer}</div>
+                )}
+                {verification?.roi_prompt && <div className="hint">ROI prompt: {verification.roi_prompt}</div>}
               </div>
             )}
           </div>

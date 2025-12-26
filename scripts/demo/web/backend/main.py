@@ -288,6 +288,28 @@ def parse_cors_origins(raw: str) -> List[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+NEGATION_PATTERNS = (
+    "does not",
+    "doesn't",
+    "not visible",
+    "no ",
+    "cannot see",
+    "can't see",
+    "not shown",
+    "doesnt",
+    "none",
+)
+
+
+def has_negation(text: str) -> bool:
+    lower = (text or "").lower()
+    return any(pat in lower for pat in NEGATION_PATTERNS)
+
+
+def verify_topk() -> int:
+    return max(env_int("FLMM_WEB_VERIFY_TOPK", 1), 1)
+
+
 def configure_logging():
     level_name = os.getenv("FLMM_WEB_LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
@@ -493,6 +515,74 @@ def ground_payload(backend: BackendState, session: SessionState) -> Dict[str, An
     }
 
 
+def select_auto_phrases(session: SessionState, limit: int) -> List[int]:
+    if not session.phrases:
+        return []
+    indices: List[int] = []
+    for idx in range(len(session.phrases)):
+        indices.append(idx)
+        if len(indices) >= limit:
+            break
+    return indices
+
+
+def _first_bbox(records: List[Dict[str, Any]]) -> Optional[List[int]]:
+    for rec in records:
+        bbox = rec.get("bbox")
+        if bbox and len(bbox) == 4:
+            return [int(v) for v in bbox]
+    return None
+
+
+def auto_roi_resample(
+    backend: BackendState, entry: SessionEntry, question: str
+) -> Optional[Dict[str, Any]]:
+    """DeepSeek-style: auto ground then ROI re-answer.
+
+    Returns a payload with ground records and ROI answer info if available.
+    """
+
+    session = entry.state
+    if session.last_answer is None or session.current_image is None:
+        return None
+    original_answer = session.last_answer.get("output_text", "")
+    indices = select_auto_phrases(session, verify_topk())
+    if not indices:
+        return None
+    with backend.model_lock:
+        handle_ground(session, indices)
+    ground_data = ground_payload(backend, session)
+    bbox = _first_bbox(ground_data.get("records", []))
+    if not bbox:
+        ground_data.update({"used": False, "original_answer": original_answer})
+        return ground_data
+    try:
+        with backend.model_lock:
+            roi_result = session.model.visual_cot_resample(
+                image=session.current_image,
+                question=question,
+                bbox=tuple(bbox),
+                answer_cache=session.last_answer,
+                max_new_tokens=session.args.max_new_tokens,
+            )
+    except Exception as exc:
+        LOGGER.warning("ROI resample failed: %s", exc)
+        ground_data.update({"used": False, "error": str(exc), "original_answer": original_answer})
+        return ground_data
+    roi_answer = roi_result.get("answer_text", "")
+    roi_bbox = roi_result.get("roi_bbox", bbox)
+    ground_data.update(
+        {
+            "used": True,
+            "roi_answer": roi_answer,
+            "roi_bbox": to_native(roi_bbox),
+            "roi_prompt": roi_result.get("prompt"),
+            "original_answer": original_answer,
+        }
+    )
+    return ground_data
+
+
 def latest_assistant_text(session: SessionState) -> Optional[str]:
     for item in reversed(session.history):
         if item.get("role") == "assistant":
@@ -653,12 +743,24 @@ def ask(request: AskRequest):
             if request.mode == "default":
                 if not entry.state.last_answer:
                     raise RuntimeError("Model did not return answer.")
+                answer_text = entry.state.last_answer.get("output_text", "")
                 data.update(
                     {
-                        "answer": entry.state.last_answer.get("output_text", ""),
+                        "answer": answer_text,
                         "phrases": build_phrase_payload(entry.state),
                     }
                 )
+                verification = auto_roi_resample(backend, entry, request.question)
+                if verification:
+                    data["verification"] = verification
+                    if verification.get("used") and verification.get("roi_answer"):
+                        data["answer"] = verification["roi_answer"]
+                        # Keep history consistent with ROI answer.
+                        if (
+                            entry.state.history
+                            and entry.state.history[-1].get("role") == "assistant"
+                        ):
+                            entry.state.history[-1]["text"] = verification["roi_answer"]
             else:
                 answer_text = latest_assistant_text(entry.state)
                 data.update({"answer": answer_text})
