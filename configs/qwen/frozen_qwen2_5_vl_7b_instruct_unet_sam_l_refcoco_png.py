@@ -285,7 +285,7 @@ env_cfg = dict(
 
 visualizer = dict(type=Visualizer, vis_backends=[dict(type=TensorboardVisBackend)])
 # set log level
-log_level = 'INFO'
+log_level = 'WARNING'
 
 # load from which checkpoint (设置为 None 从头开始训练)
 load_from = None

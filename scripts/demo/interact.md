@@ -18,10 +18,9 @@ export PYTHONPATH=.
 CUDA_VISIBLE_DEVICES=0,1 \
 python scripts/demo/interact.py \
     --device-map auto \
-    --device-max-memory 0:22GiB,1:22GiB \
     --checkpoint checkpoints/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.pth \
     --image data/coco/val2017/000000000632.jpg \
-    --max-new-tokens 256
+    --max-new-tokens 512
 ```
 
 > ✅ `--device-map auto` 会调用 Hugging Face Accelerate 在所有可见 GPU 上自动切分 Qwen2.5-VL-7B；`--device` 仍然控制 UNet/SAM 等附属模块所在的主显卡。若只用单张卡，可传 `--device-map none`。

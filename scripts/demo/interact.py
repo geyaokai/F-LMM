@@ -25,10 +25,8 @@ from xtuner.model.utils import guess_load_checkpoint
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-
+# import pdb;pdb.set_trace()
 from scripts.demo.utils import colors  # noqa: E402
-
-
 @dataclass
 class PhraseCandidate:
     text: str
@@ -132,6 +130,37 @@ def parse_max_memory_arg(raw_value: Optional[str]) -> Optional[Dict[str, str]]:
     return limits or None
 
 
+def resolve_inference_device(name: str) -> torch.device:
+    """Return a torch.device and ensure CUDA devices are usable."""
+    try:
+        device = torch.device(name)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'Invalid device "{name}": {exc}') from exc
+    if device.type != 'cuda':
+        return device
+    try:
+        cuda_available = torch.cuda.is_available()
+    except Exception as exc:
+        raise RuntimeError(
+            f'Unable to initialize CUDA device "{name}": {exc}'
+        ) from exc
+    if not cuda_available:
+        raise RuntimeError(
+            f'CUDA device "{name}" requested, but CUDA is unavailable. '
+            'Check your NVIDIA driver/CUDA setup or pass "--device cpu".')
+    try:
+        total = torch.cuda.device_count()
+    except Exception as exc:
+        raise RuntimeError(
+            f'Failed to query CUDA devices while resolving "{name}": {exc}'
+        ) from exc
+    if device.index is not None and (device.index < 0 or device.index >= total):
+        raise RuntimeError(
+            f'Device "{name}" targets cuda:{device.index}, but only {total} device(s) are visible. '
+            'Adjust CUDA_VISIBLE_DEVICES or select a valid --device.')
+    return device
+
+
 def move_auxiliary_modules(model, device: torch.device):
     for attr in ('mask_head', 'sam', 'text_proj'):
         module = getattr(model, attr, None)
@@ -205,7 +234,8 @@ def load_model(cfg, args):
         state_dict = guess_load_checkpoint(args.checkpoint)
         missing, unexpected = model.load_state_dict(state_dict, strict=False)
         print(f'[Model] Loaded checkpoint: missing={len(missing)}, unexpected={len(unexpected)}')
-    target_device = torch.device(args.device)
+    target_device = resolve_inference_device(args.device)
+    args.device = str(target_device)
     if device_map:
         move_auxiliary_modules(model, target_device)
         qwen_device = infer_qwen_primary_device(model.qwen_model, target_device)
@@ -456,6 +486,34 @@ def ensure_image(session: SessionState):
         raise RuntimeError('Load an image first with `load <path>`.')
 
 
+def infer_min_image_side(model: Any) -> Optional[int]:
+    patch_size = getattr(model, 'patch_size', None)
+    merge_size = getattr(model, 'merge_size', None)
+    if patch_size:
+        return int(patch_size * (merge_size or 1))
+    processor = getattr(model, 'processor', None)
+    if processor is not None and hasattr(processor, 'image_processor'):
+        image_processor = processor.image_processor
+        patch_size = getattr(image_processor, 'patch_size', None)
+        if patch_size:
+            merge_size = getattr(image_processor, 'merge_size', None)
+            return int(patch_size * (merge_size or 1))
+    return None
+
+
+def ensure_min_image_size(image: Image.Image, min_side: int) -> Tuple[Image.Image, bool]:
+    if min_side <= 0:
+        return image, False
+    width, height = image.size
+    if width >= min_side and height >= min_side:
+        return image, False
+    scale = max(min_side / width, min_side / height)
+    new_width = max(min_side, int(round(width * scale)))
+    new_height = max(min_side, int(round(height * scale)))
+    resized = image.resize((new_width, new_height), Image.BICUBIC)
+    return resized, True
+
+
 def handle_load(session: SessionState, path: str):
     image, resolved = load_image(path)
     session.current_image = image
@@ -576,6 +634,11 @@ def handle_inspect(session: SessionState, idx: int, question: Optional[str]):
     if roi is None:
         print('[Inspect] Selected mask has no ROI (empty mask).')
         return
+    min_side = infer_min_image_side(session.model)
+    if min_side is not None:
+        roi, resized = ensure_min_image_size(roi, min_side)
+        if resized:
+            print(f'[Inspect] ROI upscaled to {roi.size} to meet min side {min_side}.')
     prompt = question.strip() if question else session.args.inspect_prompt
     print(f'[Inspect] Asking on ROI with prompt: {prompt}')
     output = session.model.answer(

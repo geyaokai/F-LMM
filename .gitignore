@@ -200,3 +200,10 @@ sam_cache/
 # Temporary training files
 *.tmp
 *.temp
+
+# Web frontend (Vite/React)
+scripts/demo/web/frontend/node_modules/
+scripts/demo/web/frontend/dist/
+scripts/demo/web/frontend/.vite/
+scripts/demo/web/frontend/.env.local
+scripts/demo/web/frontend/.env.*

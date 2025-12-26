@@ -1,0 +1,701 @@
+"""FastAPI backend that mirrors the CLI demo flows in scripts/demo/interact.py."""
+from __future__ import annotations
+
+import argparse
+import base64
+import binascii
+import logging
+import os
+import shlex
+import shutil
+import sys
+import threading
+import time
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from mmengine.config import Config
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.demo.interact import (  # noqa: E402
+    SessionState,
+    clear_history,
+    handle_ask,
+    handle_ground,
+    handle_load,
+    history_turns,
+    load_model,
+    parse_args as cli_parse_args,
+)
+
+APP_VERSION = "0.1.0"
+LOGGER = logging.getLogger("flmm.web")
+
+
+class APIModel(BaseModel):
+    """Base Pydantic model with strict field checking."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SessionIdentRequest(APIModel):
+    session_id: str = Field(..., description="Session identifier")
+
+
+class SessionCreateRequest(APIModel):
+    image_path: Optional[str] = Field(
+        None, description="Optional path of the image to load immediately."
+    )
+    image_base64: Optional[str] = Field(
+        None, description="Optional base64 image payload to preload."
+    )
+
+    @model_validator(mode="after")
+    def validate_payload(self):
+        if self.image_path and self.image_base64:
+            raise ValueError("Provide either image_path or image_base64, not both.")
+        return self
+
+
+class LoadImageRequest(SessionIdentRequest):
+    image_path: Optional[str] = Field(
+        None, description="Absolute/relative image path accessible to the backend."
+    )
+    image_base64: Optional[str] = Field(
+        None, description="Base64 encoded image content."
+    )
+
+    @model_validator(mode="after")
+    def validate_payload(self):
+        if self.image_path and self.image_base64:
+            raise ValueError("Provide either image_path or image_base64, not both.")
+        if not self.image_path and not self.image_base64:
+            raise ValueError("image_path or image_base64 is required.")
+        return self
+
+
+class AskRequest(SessionIdentRequest):
+    mode: Literal["default", "roi", "cot"] = Field(
+        "default", description="Ask mode that mirrors CLI ask/inspect/cot."
+    )
+    question: str = Field("", description="User question.")
+    index: Optional[int] = Field(
+        None, description="ROI or CoT index when mode != default."
+    )
+    reset_history: bool = Field(
+        False, description="Clear history before asking (default-only)."
+    )
+
+    @model_validator(mode="after")
+    def validate_payload(self):
+        if self.mode == "default" and not self.question.strip():
+            raise ValueError("Question must not be empty in default mode.")
+        if self.mode in {"roi", "cot"} and self.index is None:
+            raise ValueError("ROI/CoT mode requires `index`.")
+        if self.mode == "cot" and not self.question.strip():
+            raise ValueError("CoT mode requires question.")
+        return self
+
+
+class GroundRequest(SessionIdentRequest):
+    indices: List[int] = Field(..., description="Phrase indices to ground.", min_length=1)
+
+
+class ClearRequest(SessionIdentRequest):
+    pass
+
+
+class SessionResetRequest(SessionIdentRequest):
+    pass
+
+
+@dataclass
+class SessionEntry:
+    session_id: str
+    state: SessionState
+    created_at: datetime
+    last_active: datetime
+    lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def touch(self):
+        self.last_active = datetime.utcnow()
+
+
+class SessionStore:
+    """In-memory session registry with TTL + cleanup thread."""
+
+    def __init__(
+        self,
+        model: Any,
+        args: argparse.Namespace,
+        result_root: Path,
+        ttl: timedelta,
+        cleanup_interval: int,
+    ):
+        self._model = model
+        self._args = args
+        self._result_root = result_root
+        self._ttl = ttl
+        self._cleanup_interval = max(cleanup_interval, 60)
+        self._sessions: Dict[str, SessionEntry] = {}
+        self._lock = threading.RLock()
+        self._stop_event = threading.Event()
+        self._sweeper = threading.Thread(
+            target=self._cleanup_loop, name="flmm-session-cleaner", daemon=True
+        )
+        self._sweeper.start()
+
+    def shutdown(self):
+        self._stop_event.set()
+        self._sweeper.join(timeout=2)
+
+    def count(self) -> int:
+        with self._lock:
+            return len(self._sessions)
+
+    def create_session(self) -> SessionEntry:
+        state = SessionState(model=self._model, args=self._args, result_root=self._result_root)
+        entry = SessionEntry(
+            session_id=str(uuid.uuid4()),
+            state=state,
+            created_at=datetime.utcnow(),
+            last_active=datetime.utcnow(),
+        )
+        with entry.lock:
+            self._reset_workspace(entry)
+            entry.state.reset_answer()
+        with self._lock:
+            self._sessions[entry.session_id] = entry
+        return entry
+
+    def get(self, session_id: str) -> SessionEntry:
+        with self._lock:
+            entry = self._sessions.get(session_id)
+        if not entry:
+            raise KeyError(f"Session '{session_id}' not found.")
+        entry.touch()
+        return entry
+
+    def reset(self, session_id: str) -> SessionEntry:
+        entry = self.get(session_id)
+        with entry.lock:
+            self._reset_state(entry.state)
+            self._reset_workspace(entry)
+        entry.touch()
+        return entry
+
+    def delete(self, session_id: str) -> SessionEntry:
+        with self._lock:
+            entry = self._sessions.pop(session_id, None)
+        if not entry:
+            raise KeyError(f"Session '{session_id}' not found.")
+        with entry.lock:
+            self._remove_dir(entry.state.session_dir)
+        return entry
+
+    def drop_expired(self) -> int:
+        now = datetime.utcnow()
+        removed: List[SessionEntry] = []
+        with self._lock:
+            for sid, entry in list(self._sessions.items()):
+                if now - entry.last_active <= self._ttl:
+                    continue
+                if not entry.lock.acquire(blocking=False):
+                    continue
+                try:
+                    removed.append(self._sessions.pop(sid))
+                finally:
+                    entry.lock.release()
+        for entry in removed:
+            self._remove_dir(entry.state.session_dir)
+        if removed:
+            LOGGER.info("Cleaned %d expired session(s).", len(removed))
+        return len(removed)
+
+    def _cleanup_loop(self):
+        while not self._stop_event.wait(self._cleanup_interval):
+            try:
+                self.drop_expired()
+            except Exception as exc:
+                LOGGER.warning("Session cleanup failed: %s", exc)
+
+    def _reset_state(self, state: SessionState):
+        state.reset_answer()
+        state.current_image = None
+        state.current_image_path = None
+        state.last_records = []
+        state.ground_counter = 0
+
+    def _reset_workspace(self, entry: SessionEntry):
+        suffix = entry.session_id.split("-", 1)[0]
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        millis = int(time.time() * 1000) % 1000
+        new_dir = self._result_root / f"{timestamp}_{millis:03d}_{suffix}"
+        self._remove_dir(entry.state.session_dir)
+        new_dir.mkdir(parents=True, exist_ok=True)
+        entry.state.session_dir = new_dir
+        entry.state.ground_counter = 0
+
+    def _remove_dir(self, path: Path):
+        try:
+            if path and path.exists():
+                shutil.rmtree(path, ignore_errors=True)
+        except Exception as exc:
+            LOGGER.warning("Failed to remove %s: %s", path, exc)
+
+
+def env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        LOGGER.warning("Invalid integer for %s=%s, fallback=%d", name, raw, default)
+        return default
+
+
+def ensure_mount_path(value: str) -> str:
+    path = value or "/results"
+    path = "/" + path.lstrip("/")
+    if len(path) > 1 and path.endswith("/"):
+        path = path.rstrip("/")
+    return path
+
+
+def parse_cors_origins(raw: str) -> List[str]:
+    raw = raw.strip()
+    if raw == "*":
+        return ["*"]
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def configure_logging():
+    level_name = os.getenv("FLMM_WEB_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
+    LOGGER.setLevel(level)
+    mm_level_name = os.getenv("FLMM_WEB_MMENGINE_LOG_LEVEL", "WARNING").upper()
+    mm_level = getattr(logging, mm_level_name, logging.WARNING)
+    logging.getLogger("mmengine").setLevel(mm_level)
+    LOGGER.info("Logging configured. app=%s mmengine=%s", level_name, mm_level_name)
+
+
+def build_args_from_env() -> argparse.Namespace:
+    argv_backup = sys.argv[:]
+    try:
+        sys.argv = ["flmm-web-backend"]
+        args = cli_parse_args()
+    finally:
+        sys.argv = argv_backup
+    args.config = os.getenv("FLMM_WEB_CONFIG", args.config)
+    args.checkpoint = os.getenv("FLMM_WEB_CHECKPOINT", args.checkpoint)
+    args.device = os.getenv("FLMM_WEB_DEVICE", args.device)
+    args.device_map = os.getenv("FLMM_WEB_DEVICE_MAP", args.device_map)
+    args.device_max_memory = os.getenv(
+        "FLMM_WEB_DEVICE_MAX_MEMORY", args.device_max_memory
+    )
+    args.results_dir = os.getenv("FLMM_WEB_RESULTS_DIR", args.results_dir)
+    args.max_new_tokens = env_int("FLMM_WEB_MAX_NEW_TOKENS", args.max_new_tokens)
+    args.phrase_max_tokens = env_int(
+        "FLMM_WEB_PHRASE_MAX_TOKENS", args.phrase_max_tokens
+    )
+    args.max_phrases = env_int("FLMM_WEB_MAX_PHRASES", args.max_phrases)
+    args.max_history_turns = env_int(
+        "FLMM_WEB_MAX_HISTORY_TURNS", args.max_history_turns
+    )
+    args.inspect_prompt = os.getenv("FLMM_WEB_INSPECT_PROMPT", args.inspect_prompt)
+    args.extra_prompt = os.getenv("FLMM_WEB_EXTRA_PROMPT", args.extra_prompt or "")
+    args.no_sam = env_bool("FLMM_WEB_NO_SAM", args.no_sam)
+    args.image = None
+    return args
+
+
+class BackendState:
+    """Holds model/config/session store for FastAPI handlers."""
+
+    def __init__(self):
+        configure_logging()
+        args = build_args_from_env()
+        cfg_path = Path(args.config)
+        if not cfg_path.is_absolute():
+            cfg_path = (REPO_ROOT / cfg_path).resolve()
+        LOGGER.info("Loading config: %s", cfg_path)
+        cfg = Config.fromfile(cfg_path)
+        LOGGER.info("Loading model...")
+        model = load_model(cfg, args)
+        self.args = args
+        self.cfg = cfg
+        self.model = model
+        self.results_dir = Path(args.results_dir).expanduser().resolve()
+        self.results_dir.mkdir(parents=True, exist_ok=True)
+        self.results_mount = ensure_mount_path(os.getenv("FLMM_WEB_RESULTS_MOUNT", "/results"))
+        ttl_minutes = env_int("FLMM_WEB_SESSION_TTL_MINUTES", 60)
+        cleanup_seconds = env_int("FLMM_WEB_SESSION_SWEEP_SECONDS", 300)
+        self.session_store = SessionStore(
+            model=model,
+            args=args,
+            result_root=self.results_dir,
+            ttl=timedelta(minutes=max(ttl_minutes, 1)),
+            cleanup_interval=cleanup_seconds,
+        )
+        self.model_lock = threading.Lock()
+        LOGGER.info("Backend ready: ttl=%dmin results=%s", ttl_minutes, self.results_dir)
+
+    def result_url(self, path: Optional[Path]) -> Optional[str]:
+        if path is None:
+            return None
+        try:
+            rel = path.resolve().relative_to(self.results_dir)
+        except ValueError:
+            return path.as_posix()
+        rel_str = rel.as_posix().lstrip("/")
+        return f"{self.results_mount}/{rel_str}" if rel_str else self.results_mount
+
+    def relative_result_path(self, path: Optional[Path]) -> Optional[str]:
+        if path is None:
+            return None
+        try:
+            rel = path.resolve().relative_to(self.results_dir)
+            return rel.as_posix()
+        except ValueError:
+            return path.as_posix()
+
+
+def build_response(data: Optional[Dict[str, Any]] = None, message: str = "", status: str = "ok"):
+    return {"status": status, "data": data or {}, "message": message}
+
+
+def error_response(message: str, status_code: int = 400):
+    return JSONResponse(
+        status_code=status_code,
+        content=build_response(status="error", message=message),
+    )
+
+
+def snapshot_history(session: SessionState) -> List[Dict[str, str]]:
+    return [{"role": item.get("role", ""), "text": item.get("text", "")} for item in session.history]
+
+
+def image_info(session: SessionState) -> Optional[Dict[str, Any]]:
+    if session.current_image is None:
+        return None
+    width, height = session.current_image.size
+    path_str = str(session.current_image_path) if session.current_image_path else None
+    name = session.current_image_path.name if session.current_image_path else None
+    return {"name": name, "path": path_str, "width": width, "height": height}
+
+
+def to_native(obj: Any) -> Any:
+    """Recursively convert numpy scalars/arrays to Python built-ins for JSON encoding."""
+    if isinstance(obj, (list, tuple)):
+        return [to_native(x) for x in obj]
+    # numpy.ndarray or torch.Tensor may expose tolist()
+    if hasattr(obj, "tolist"):
+        try:
+            return obj.tolist()
+        except Exception:
+            pass
+    if hasattr(obj, "item"):
+        try:
+            return obj.item()
+        except Exception:
+            pass
+    return obj
+
+
+def session_payload(backend: BackendState, entry: SessionEntry) -> Dict[str, Any]:
+    session = entry.state
+    return {
+        "session_id": entry.session_id,
+        "session_dir": backend.relative_result_path(session.session_dir),
+        "session_dir_url": backend.result_url(session.session_dir),
+        "history": snapshot_history(session),
+        "history_turns": history_turns(session),
+        "image": image_info(session),
+        "created_at": entry.created_at.isoformat(),
+        "last_active": entry.last_active.isoformat(),
+    }
+
+
+def build_phrase_payload(session: SessionState) -> List[Dict[str, Any]]:
+    payload = []
+    for idx, candidate in enumerate(session.phrases):
+        payload.append(
+            {
+                "index": idx,
+                "text": candidate.text,
+                "char_span": candidate.char_span,
+                "token_span": candidate.token_span,
+            }
+        )
+    return payload
+
+
+def ground_payload(backend: BackendState, session: SessionState) -> Dict[str, Any]:
+    records = []
+    for idx, record in enumerate(session.last_records):
+        records.append(
+            {
+                "index": idx,
+                "phrase": record.phrase_text,
+                "overlay_url": backend.result_url(record.overlay_path),
+                "mask_url": backend.result_url(record.mask_path),
+                "roi_url": backend.result_url(record.roi_path),
+                "char_span": to_native(record.char_span),
+                "token_span": to_native(record.token_span),
+                "bbox": to_native(record.bbox),
+            }
+        )
+    round_idx = max(session.ground_counter - 1, 0)
+    round_dir = session.session_dir / f"round_{round_idx:02d}"
+    return {
+        "records": records,
+        "round_dir": backend.relative_result_path(round_dir),
+        "round_url": backend.result_url(round_dir),
+    }
+
+
+def latest_assistant_text(session: SessionState) -> Optional[str]:
+    for item in reversed(session.history):
+        if item.get("role") == "assistant":
+            return item.get("text", "")
+    return None
+
+
+def decode_base64_image(session: SessionState, payload: str) -> Path:
+    header, _, data = payload.partition(",")
+    encoded = data or header
+    try:
+        binary = base64.b64decode(encoded, validate=True)
+    except binascii.Error as exc:
+        raise ValueError("Invalid base64 payload.") from exc
+    ext = ".png"
+    header_lower = header.lower()
+    if "jpeg" in header_lower or "jpg" in header_lower:
+        ext = ".jpg"
+    elif "gif" in header_lower:
+        ext = ".gif"
+    session.session_dir.mkdir(parents=True, exist_ok=True)
+    file_path = session.session_dir / f"upload_{int(time.time() * 1000)}{ext}"
+    file_path.write_bytes(binary)
+    return file_path
+
+
+def resolve_image_source(session: SessionState, path: Optional[str], base64_payload: Optional[str]) -> str:
+    if path:
+        return path
+    if base64_payload:
+        stored = decode_base64_image(session, base64_payload)
+        return str(stored)
+    raise ValueError("image_path or image_base64 must be provided.")
+
+
+def build_ask_cli(request: AskRequest) -> str:
+    tokens: List[str] = []
+    if request.reset_history:
+        tokens.append("--reset-history")
+    if request.mode == "roi" and request.index is not None:
+        tokens.extend(["--roi", str(request.index)])
+    elif request.mode == "cot" and request.index is not None:
+        tokens.extend(["--cot", str(request.index)])
+    if request.question.strip():
+        tokens.append(request.question)
+    return shlex.join(tokens) if tokens else ""
+
+
+backend = BackendState()
+app = FastAPI(title="F-LMM Web Backend", version=APP_VERSION)
+app.state.backend = backend
+app.mount(
+    backend.results_mount,
+    StaticFiles(directory=str(backend.results_dir), html=False),
+    name="results",
+)
+# 开发环境允许跨域，便于 Vite/本地前端调用
+cors_env = os.getenv("FLMM_WEB_CORS_ORIGINS", "*")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=parse_cors_origins(cors_env),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.on_event("shutdown")
+def _shutdown():
+    backend.session_store.shutdown()
+
+
+@app.get("/healthz")
+def healthz():
+    return build_response(
+        data={
+            "version": APP_VERSION,
+            "sessions": backend.session_store.count(),
+        }
+    )
+
+
+def _with_session(session_id: str) -> SessionEntry:
+    try:
+        return backend.session_store.get(session_id)
+    except KeyError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _run_handle_ask(entry: SessionEntry, request: AskRequest):
+    cli_str = build_ask_cli(request)
+    if not cli_str and request.mode == "default":
+        raise ValueError("Question must not be empty.")
+    with backend.model_lock:
+        handle_ask(entry.state, cli_str)
+
+
+@app.post("/session")
+@app.post("/session/create")
+def create_session(request: SessionCreateRequest):
+    try:
+        entry = backend.session_store.create_session()
+        if request.image_path or request.image_base64:
+            source = resolve_image_source(entry.state, request.image_path, request.image_base64)
+            with entry.lock:
+                handle_load(entry.state, source)
+        return build_response(data=session_payload(backend, entry))
+    except Exception as exc:
+        LOGGER.exception("Failed to create session: %s", exc)
+        return error_response(str(exc))
+
+
+@app.post("/session/reset")
+def reset_session(request: SessionResetRequest):
+    try:
+        entry = backend.session_store.reset(request.session_id)
+        return build_response(
+            data=session_payload(backend, entry), message="Session reset."
+        )
+    except Exception as exc:
+        LOGGER.exception("Failed to reset session: %s", exc)
+        return error_response(str(exc))
+
+
+@app.delete("/session/{session_id}")
+def delete_session(session_id: str):
+    try:
+        backend.session_store.delete(session_id)
+        return build_response(message="Session deleted.")
+    except Exception as exc:
+        LOGGER.exception("Failed to delete session: %s", exc)
+        return error_response(str(exc))
+
+
+@app.post("/load_image")
+def load_image(request: LoadImageRequest):
+    try:
+        entry = _with_session(request.session_id)
+        source = resolve_image_source(entry.state, request.image_path, request.image_base64)
+        with entry.lock:
+            handle_load(entry.state, source)
+        return build_response(
+            data=session_payload(backend, entry),
+            message="Image loaded.",
+        )
+    except Exception as exc:
+        LOGGER.exception("Load image failed: %s", exc)
+        return error_response(str(exc))
+
+
+@app.post("/ask")
+def ask(request: AskRequest):
+    try:
+        entry = _with_session(request.session_id)
+        with entry.lock:
+            _run_handle_ask(entry, request)
+            data: Dict[str, Any] = {"mode": request.mode}
+            if request.mode == "default":
+                if not entry.state.last_answer:
+                    raise RuntimeError("Model did not return answer.")
+                data.update(
+                    {
+                        "answer": entry.state.last_answer.get("output_text", ""),
+                        "phrases": build_phrase_payload(entry.state),
+                    }
+                )
+            else:
+                answer_text = latest_assistant_text(entry.state)
+                data.update({"answer": answer_text})
+            data.update(
+                {
+                    "history": snapshot_history(entry.state),
+                    "history_turns": history_turns(entry.state),
+                }
+            )
+        return build_response(data=data)
+    except Exception as exc:
+        LOGGER.exception("Ask failed: %s", exc)
+        return error_response(str(exc))
+
+
+@app.post("/ground")
+def ground(request: GroundRequest):
+    try:
+        entry = _with_session(request.session_id)
+        with entry.lock:
+            with backend.model_lock:
+                handle_ground(entry.state, request.indices)
+            data = ground_payload(backend, entry.state)
+            data["history"] = snapshot_history(entry.state)
+        return build_response(data=data)
+    except Exception as exc:
+        LOGGER.exception("Ground failed: %s", exc)
+        return error_response(str(exc))
+
+
+@app.post("/clear")
+def clear(request: ClearRequest):
+    try:
+        entry = _with_session(request.session_id)
+        with entry.lock:
+            clear_history(entry.state)
+        return build_response(
+            data={
+                "history": snapshot_history(entry.state),
+                "history_turns": history_turns(entry.state),
+            }
+        )
+    except Exception as exc:
+        LOGGER.exception("Clear failed: %s", exc)
+        return error_response(str(exc))
+
+
+# if __name__ == "__main__":
+#     # import uvicorn
+
+#     # uvicorn.run(
+#     #     "scripts.demo.web.backend.main:app",
+#     #     host="0.0.0.0",
+#     #     port=int(os.getenv("PORT", "9000")),
+#     #     reload=False,
+#     # )
