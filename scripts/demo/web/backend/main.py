@@ -311,6 +311,14 @@ def build_args_from_env() -> argparse.Namespace:
         sys.argv = argv_backup
     args.config = os.getenv("FLMM_WEB_CONFIG", args.config)
     args.checkpoint = os.getenv("FLMM_WEB_CHECKPOINT", args.checkpoint)
+    if args.checkpoint:
+        ckpt_path = Path(args.checkpoint).expanduser()
+        if not ckpt_path.is_absolute():
+            ckpt_path = (REPO_ROOT / ckpt_path).resolve()
+        args.checkpoint = str(ckpt_path)
+        LOGGER.info("Using checkpoint: %s (abs: %s)", os.getenv("FLMM_WEB_CHECKPOINT"), args.checkpoint)
+    else:
+        LOGGER.info("Using checkpoint: <from config>")
     args.device = os.getenv("FLMM_WEB_DEVICE", args.device)
     args.device_map = os.getenv("FLMM_WEB_DEVICE_MAP", args.device_map)
     args.device_max_memory = os.getenv(
@@ -344,6 +352,8 @@ class BackendState:
         LOGGER.info("Loading config: %s", cfg_path)
         cfg = Config.fromfile(cfg_path)
         LOGGER.info("Loading model...")
+        if args.checkpoint:
+            LOGGER.info("Checkpoint override resolved path: %s (exists=%s)", args.checkpoint, Path(args.checkpoint).exists())
         model = load_model(cfg, args)
         self.args = args
         self.cfg = cfg
@@ -361,7 +371,13 @@ class BackendState:
             cleanup_interval=cleanup_seconds,
         )
         self.model_lock = threading.Lock()
-        LOGGER.info("Backend ready: ttl=%dmin results=%s", ttl_minutes, self.results_dir)
+        LOGGER.info(
+            "Backend ready: ttl=%dmin results=%s max_new_tokens=%s max_history_turns=%s",
+            ttl_minutes,
+            self.results_dir,
+            args.max_new_tokens,
+            args.max_history_turns,
+        )
 
     def result_url(self, path: Optional[Path]) -> Optional[str]:
         if path is None:

@@ -37,6 +37,7 @@ function App() {
   const [apiBase, setApiBase] = useState<string>(defaultApiBase());
   const [session, setSession] = useState<SessionPayload | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [imageUrl, setImageUrl] = useState("");
   const [question, setQuestion] = useState("What is in the image?");
   const [mode, setMode] = useState<AskMode>("default");
   const [modeIndex, setModeIndex] = useState<string>("");
@@ -74,6 +75,7 @@ function App() {
       setGroundRecords([]);
       setSelectedPhrase(null);
       setImagePreview(undefined);
+      setImageUrl("");
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -106,6 +108,44 @@ function App() {
         // 清空 file input，便于重复选择同一张图也能触发 onChange
         fileInputRef.current.value = "";
       }
+    } catch (err) {
+      setStatus((err as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleLoadUrl() {
+    if (!session) {
+      setStatus("No session");
+      return;
+    }
+    const url = imageUrl.trim();
+    if (!url) {
+      setStatus("Image URL is empty");
+      return;
+    }
+    setUploading(true);
+    setStatus("Fetching image from URL...");
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        throw new Error(`Fetch failed: ${resp.status} ${resp.statusText}`);
+      }
+      const blob = await resp.blob();
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => (typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Read failed")));
+        reader.onerror = () => reject(reader.error || new Error("Read failed"));
+        reader.readAsDataURL(blob);
+      });
+      const res = await apiFetch<SessionPayload>(apiBase, "/load_image", {
+        method: "POST",
+        json: { session_id: session.session_id, image_base64: dataUrl },
+      });
+      setSession(res.data);
+      setImagePreview(url);
+      setStatus(res.message || "Image loaded");
     } catch (err) {
       setStatus((err as Error).message);
     } finally {
@@ -340,6 +380,18 @@ function App() {
             <label className="label">Upload image</label>
             <input ref={fileInputRef} type="file" accept="image/*" onChange={(e) => handleUpload(e.target.files)} />
             <div className="hint">File is sent as base64 to backend /load_image.</div>
+            <div className="row">
+              <input
+                className="input"
+                placeholder="Or paste an image URL..."
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+              />
+              <button className="btn ghost" onClick={handleLoadUrl} disabled={uploading || !imageUrl.trim()}>
+                Load URL
+              </button>
+            </div>
+            <div className="hint">说明：前端会拉取 URL 并转 base64 发送，若源站未允许跨域可能失败。</div>
           </div>
 
           <div className="image-frame">
