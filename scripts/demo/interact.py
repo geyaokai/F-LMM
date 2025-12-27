@@ -284,8 +284,6 @@ def load_image(path_str: str) -> Tuple[Image.Image, Path]:
 
 def parse_ask_command(arg_str: str) -> AskCommand:
     parser = argparse.ArgumentParser(prog='ask', add_help=False, exit_on_error=False)
-    parser.add_argument('--roi', type=int, default=None)
-    parser.add_argument('--cot', type=int, default=None)
     parser.add_argument('--reset-history', action='store_true')
     parser.add_argument('question', nargs='*')
     tokens = shlex.split(arg_str)
@@ -293,15 +291,7 @@ def parse_ask_command(arg_str: str) -> AskCommand:
         opts = parser.parse_args(tokens)
     except (SystemExit, argparse.ArgumentError) as exc:
         raise ValueError('无法解析 ask 参数。') from exc
-    if opts.roi is not None and opts.cot is not None:
-        raise ValueError('不能同时指定 --roi 与 --cot。')
     question = ' '.join(opts.question).strip()
-    if opts.roi is not None:
-        return AskCommand(mode='roi', index=opts.roi, question=question,
-                          reset_history=opts.reset_history)
-    if opts.cot is not None:
-        return AskCommand(mode='cot', index=opts.cot, question=question,
-                          reset_history=opts.reset_history)
     return AskCommand(mode='default', index=None, question=question,
                       reset_history=opts.reset_history)
 
@@ -527,46 +517,23 @@ def handle_ask(session: SessionState, question: str):
         ask_cmd = parse_ask_command(question)
     except ValueError as exc:
         print(f'[Ask] {exc}')
-        print('[Ask] 用法: ask [--roi idx | --cot idx] <question>')
         return
-    if ask_cmd.mode in {'roi', 'cot'} and ask_cmd.reset_history:
-        print('[Ask] --reset-history 仅适用于普通问答，将被忽略。')
-    if ask_cmd.mode == 'roi':
-        handle_inspect(session, ask_cmd.index, ask_cmd.question)
         return
-    if ask_cmd.mode == 'cot':
-        if not ask_cmd.question:
-            print('[CoT] Question must not be empty.')
-            return
-        handle_cot_resample(session, ask_cmd.index, ask_cmd.question)
+    try:
+        result = pipeline_default_ask(
+            session,
+            ask_cmd.question,
+            reset_history=ask_cmd.reset_history,
+            auto_topk=1)
+    except Exception as exc:
+        print(f'[Ask] Failed: {exc}')
         return
-    ensure_image(session)
-    if ask_cmd.reset_history:
-        clear_history(session)
-    if not ask_cmd.question:
-        print('[Ask] Question must not be empty.')
-        return
-    print('[Ask] Running Qwen...')
-    output = session.model.answer(
-        image=session.current_image,
-        question=ask_cmd.question,
-        history=session.history,
-        max_new_tokens=session.args.max_new_tokens)
-    answer_text = output['output_text']
+    answer_text = result.get("answer", "")
     print(f'[Answer]\n{answer_text}\n')
-    offsets = build_offsets(session.model.tokenizer, answer_text)
-    phrase_texts = extract_phrases_via_model(
-        session.model, answer_text, session.args.phrase_max_tokens, session.args.max_phrases)
-    candidates = build_phrase_candidates(answer_text, phrase_texts, offsets)
-    session.last_answer = output
-    session.token_offsets = offsets
-    session.phrases = candidates
-    session.last_records = []
-    append_history_entry(session, 'user', ask_cmd.question)
-    append_history_entry(session, 'assistant', answer_text)
     turns = history_turns(session)
     if turns > 0:
         print(f'[Ask] 当前上下文包含 {turns} 轮对话。')
+    candidates = result.get("phrases", [])
     if not candidates:
         print('[Ask] No candidate phrases detected.')
     else:
@@ -574,33 +541,48 @@ def handle_ask(session: SessionState, question: str):
         for idx, cand in enumerate(candidates):
             start, end = cand.char_span
             snippet = answer_text[start:end]
-            print(f'  {idx}: "{snippet}" chars[{start}:{end}] tokens{cand.token_span}')
+            print(f'  {idx}: \"{snippet}\" chars[{start}:{end}] tokens{cand.token_span}')
+    if result.get("roi_answer"):
+        print('[Ask] ROI re-answer used.')
 
 
 def handle_ground(session: SessionState, indices: List[int]):
+    records = perform_ground(session, indices)
+    for idx, rec in enumerate(records):
+        roi_info = f', ROI: {rec.roi_path.name}' if rec.roi_path else ''
+        print(f'[Ground] #{idx} mask saved to {rec.overlay_path} (mask: {rec.mask_path.name}{roi_info})')
+
+
+def _first_bbox_record(records: List[GroundRecord]) -> Optional[Tuple[int, int, int, int]]:
+    for rec in records:
+        if rec.bbox and len(rec.bbox) == 4:
+            return tuple(int(v) for v in rec.bbox)
+    return None
+
+
+def perform_ground(session: SessionState, indices: List[int]) -> List[GroundRecord]:
     ensure_image(session)
     if session.last_answer is None:
         print('[Ground] Ask a question first.')
-        return
+        return []
     if not indices:
         print('[Ground] Provide phrase indices, e.g., `ground 0 1`.')
-        return
+        return []
     phrases = session.phrases
     if not phrases:
         print('[Ground] No phrase candidates available.')
-        return
+        return []
     positive_ids = []
     labels = []
     selected = []
     for idx in indices:
         if idx < 0 or idx >= len(phrases):
             print(f'[Ground] Invalid index {idx}.')
-            return
+            return []
         candidate = phrases[idx]
         positive_ids.append(candidate.token_span)
         labels.append(candidate.text)
         selected.append(candidate)
-    print(f'[Ground] Extracting masks for {labels} ...')
     pred_masks, sam_masks = session.model.ground(
         image=session.current_image,
         positive_ids=positive_ids,
@@ -616,86 +598,87 @@ def handle_ground(session: SessionState, indices: List[int]):
         rec.token_span = span
         rec.char_span = candidate.char_span
     session.last_records = records
-    for idx, rec in enumerate(records):
-        roi_info = f', ROI: {rec.roi_path.name}' if rec.roi_path else ''
-        print(f'[Ground] #{idx} mask saved to {rec.overlay_path} (mask: {rec.mask_path.name}{roi_info})')
+    return records
+
+
+def pipeline_default_ask(session: SessionState,
+                         question: str,
+                         reset_history: bool = False,
+                         auto_topk: int = 1) -> Dict[str, Any]:
+    """Unified pipeline: answer -> auto ground -> ROI re-answer (DeepSeek-style)."""
+    ensure_image(session)
+    if reset_history:
+        clear_history(session)
+    if not question:
+        raise ValueError('Question must not be empty.')
+    output = session.model.answer(
+        image=session.current_image,
+        question=question,
+        history=session.history,
+        max_new_tokens=session.args.max_new_tokens)
+    answer_text = output['output_text']
+    offsets = build_offsets(session.model.tokenizer, answer_text)
+    phrase_texts = extract_phrases_via_model(
+        session.model, answer_text, session.args.phrase_max_tokens, session.args.max_phrases)
+    candidates = build_phrase_candidates(answer_text, phrase_texts, offsets)
+    session.last_answer = output
+    session.token_offsets = offsets
+    session.phrases = candidates
+    session.last_records = []
+    append_history_entry(session, 'user', question)
+    final_answer = answer_text
+    verification: Dict[str, Any] = {"original_answer": answer_text, "used": False}
+    if auto_topk > 0 and candidates:
+        indices = list(range(min(auto_topk, len(candidates))))
+        records = perform_ground(session, indices)
+        bbox = _first_bbox_record(records)
+        verification.update({
+            "used": bool(records),
+        })
+        if bbox:
+            try:
+                roi_result = session.model.visual_cot_resample(
+                    image=session.current_image,
+                    question=question,
+                    bbox=bbox,
+                    answer_cache=session.last_answer,
+                    max_new_tokens=session.args.max_new_tokens)
+                roi_answer = roi_result.get("answer_text", "")
+                if roi_answer:
+                    final_answer = roi_answer
+                    verification.update({
+                        "roi_answer": roi_answer,
+                        "roi_bbox": roi_result.get("roi_bbox", bbox),
+                        "roi_prompt": roi_result.get("prompt"),
+                    })
+            except Exception as exc:
+                verification["error"] = str(exc)
+    append_history_entry(session, 'assistant', final_answer)
+    session.last_answer["output_text"] = final_answer
+    return {
+        "answer": final_answer,
+        "original_answer": answer_text,
+        "roi_answer": verification.get("roi_answer"),
+        "roi_bbox": verification.get("roi_bbox"),
+        "phrases": candidates,
+        "verification": verification,
+    }
 
 
 def handle_inspect(session: SessionState, idx: int, question: Optional[str]):
-    ensure_image(session)
-    if not session.last_records:
-        print('[Inspect] Run `ground` first.')
-        return
-    if idx < 0 or idx >= len(session.last_records):
-        print(f'[Inspect] Invalid mask index {idx}.')
-        return
-    record = session.last_records[idx]
-    roi = record.roi_image
-    if roi is None:
-        print('[Inspect] Selected mask has no ROI (empty mask).')
-        return
-    min_side = infer_min_image_side(session.model)
-    if min_side is not None:
-        roi, resized = ensure_min_image_size(roi, min_side)
-        if resized:
-            print(f'[Inspect] ROI upscaled to {roi.size} to meet min side {min_side}.')
-    prompt = question.strip() if question else session.args.inspect_prompt
-    print(f'[Inspect] Asking on ROI with prompt: {prompt}')
-    output = session.model.answer(
-        image=roi,
-        question=prompt,
-        history=session.history,
-        max_new_tokens=session.args.max_new_tokens)
-    print(f'[Inspect #{idx}] {output["output_text"]}')
-    append_history_entry(session, 'user', f'[ROI #{idx}] {prompt}')
-    append_history_entry(session, 'assistant', output['output_text'])
-    turns = history_turns(session)
-    if turns > 0:
-        print(f'[Inspect] 当前上下文包含 {turns} 轮对话。')
+    print('[Inspect] Legacy ROI inspect removed; use default ask flow.')
 
 
 def handle_cot_resample(session: SessionState, idx: int, question: str):
-    ensure_image(session)
-    if session.last_answer is None or not session.last_records:
-        print('[CoT] Run `ask` and `ground` before re-sampling.')
-        return
-    question = question.strip()
-    if not question:
-        print('[CoT] Question must not be empty.')
-        return
-    if idx < 0 or idx >= len(session.last_records):
-        print(f'[CoT] Invalid mask index {idx}.')
-        return
-    record = session.last_records[idx]
-    if record.bbox is None:
-        print('[CoT] Selected mask has no valid ROI bbox.')
-        return
-    print(f'[CoT] Resampling ROI #{idx} with question: {question}')
-    result = session.model.visual_cot_resample(
-        image=session.current_image,
-        question=question,
-        bbox=record.bbox,
-        answer_cache=session.last_answer,
-        max_new_tokens=session.args.max_new_tokens)
-    print(f'[CoT #{idx}] {result["answer_text"]}')
-    append_history_entry(session, 'user', f'[CoT #{idx}] {question}')
-    append_history_entry(session, 'assistant', result['answer_text'])
-    turns = history_turns(session)
-    if turns > 0:
-        print(f'[CoT] 当前上下文包含 {turns} 轮对话。')
+    print('[CoT] Legacy CoT resample removed; use default ask flow.')
 
 
 def print_help():
     print('Commands:')
     print('  load <image_path>        Load image for the current session.')
-    print('  ask <question>           Ask Qwen about the loaded image (multi-turn context kept).')
+    print('  ask <question>           Ask Qwen (pipeline: answer -> auto ground -> ROI re-answer).')
     print('  ask --reset-history ...  Clear context before asking the next question.')
-    print('  ask --roi <idx> [prompt] Ask on a grounded ROI (alias of legacy inspect).')
-    print('  ask --cot <idx> <question>')
-    print('                          Visual CoT re-sample using cached tokens (alias of legacy cot).')
     print('  ground <idx ...>         Ground one or more phrase indices from the last answer.')
-    print('  inspect <idx> [prompt]   (Legacy) Same as ask --roi <idx> [prompt].')
-    print('  cot <idx> <question>     (Legacy) Same as ask --cot <idx> <question>.')
     print('  clear                    Clear stored multi-turn conversation context.')
     print('  help                     Show this message.')
     print('  exit / quit              Terminate the demo.')
@@ -752,35 +735,6 @@ def main():
                     handle_ground(session, indices)
             elif cmd == 'clear':
                 clear_history(session)
-            elif cmd == 'inspect':
-                if not arg_str:
-                    print('[Inspect] Usage: inspect <idx> [prompt]')
-                    continue
-                tokens = shlex.split(arg_str)
-                if not tokens:
-                    print('[Inspect] Usage: inspect <idx> [prompt]')
-                    continue
-                print('[Inspect] 建议改用 `ask --roi <idx> [prompt]`。')
-                try:
-                    mask_idx = int(tokens[0])
-                except ValueError:
-                    print('[Inspect] First argument must be an integer index.')
-                    continue
-                question = ' '.join(tokens[1:]) if len(tokens) > 1 else ''
-                handle_inspect(session, mask_idx, question)
-            elif cmd == 'cot':
-                tokens = shlex.split(arg_str)
-                if len(tokens) < 2:
-                    print('[CoT] Usage: cot <idx> <question>')
-                    continue
-                print('[CoT] 建议改用 `ask --cot <idx> <question>`。')
-                try:
-                    cot_idx = int(tokens[0])
-                except ValueError:
-                    print('[CoT] First argument must be an integer index.')
-                    continue
-                cot_question = ' '.join(tokens[1:])
-                handle_cot_resample(session, cot_idx, cot_question)
             else:
                 print(f'[Warn] Unknown command "{cmd}". Type `help` for usage.')
         except Exception as exc:

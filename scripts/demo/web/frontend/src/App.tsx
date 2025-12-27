@@ -2,8 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, defaultApiBase, withResultUrl } from "./api";
 import { AskData, GroundData, GroundRecord, PhraseItem, SessionPayload, Verification } from "./types";
 
-type AskMode = "default" | "roi" | "cot";
-
 async function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -39,8 +37,6 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [imageUrl, setImageUrl] = useState("");
   const [question, setQuestion] = useState("What is in the image?");
-  const [mode, setMode] = useState<AskMode>("default");
-  const [modeIndex, setModeIndex] = useState<string>("");
   const [resetHistory, setResetHistory] = useState(false);
   const [answer, setAnswer] = useState<string>("");
   const [phrases, setPhrases] = useState<PhraseItem[]>([]);
@@ -162,20 +158,8 @@ function App() {
       setStatus("No session");
       return;
     }
-    if (!question.trim() && mode === "default") {
+    if (!question.trim()) {
       setStatus("Question is required");
-      return;
-    }
-    const indexForMode =
-      mode === "default"
-        ? undefined
-        : modeIndex.trim()
-          ? Number(modeIndex)
-          : selectedPhrase !== null
-            ? selectedPhrase
-            : undefined;
-    if (mode !== "default" && (indexForMode === undefined || Number.isNaN(indexForMode))) {
-      setStatus("Index is required for ROI/CoT");
       return;
     }
     setAskLoading(true);
@@ -185,9 +169,7 @@ function App() {
         method: "POST",
         json: {
           session_id: session.session_id,
-          mode,
           question,
-          index: indexForMode,
           reset_history: resetHistory,
         },
       });
@@ -311,26 +293,6 @@ function App() {
               placeholder="Ask about the image..."
             />
             <div className="row">
-              <div className="field">
-                <label className="label">Mode</label>
-                <select className="input" value={mode} onChange={(e) => setMode(e.target.value as AskMode)}>
-                  <option value="default">default</option>
-                  <option value="roi">roi</option>
-                  <option value="cot">cot</option>
-                </select>
-              </div>
-              {mode !== "default" && (
-                <div className="field">
-                  <label className="label">Index</label>
-                  <input
-                    className="input"
-                    type="number"
-                    value={modeIndex}
-                    onChange={(e) => setModeIndex(e.target.value)}
-                    placeholder="Phrase/ROI index"
-                  />
-                </div>
-              )}
               <div className="field checkbox">
                 <label className="label">
                   <input type="checkbox" checked={resetHistory} onChange={(e) => setResetHistory(e.target.checked)} /> reset history

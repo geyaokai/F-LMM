@@ -43,6 +43,12 @@ class FrozenQwen(BaseModel):
         else:
             self.tokenizer = BUILDER.build(tokenizer)
             self.processor = None
+        # 统一使用左填充，避免批量推理时出现 addCriterion 乱码 / 截断
+        try:
+            # import pdb; pdb.set_trace()
+            self.tokenizer.padding_side = 'left'
+        except Exception as e:
+            print_log(f"Warning: failed to enforce left padding: {e}")
         
         # 获取视觉相关 token ID（Qwen2.5-VL 使用 <|vision_start|>, <|vision_end|>, <|image_pad|>）
         # 根据测试结果：
@@ -312,6 +318,8 @@ class FrozenQwenSAM(FrozenQwen):
         if not query:
             query = "Describe this image."
         system_prompt = self._sanitize_prompt_text(self.prompt_template.get('SYSTEM', '').strip())
+        if system_prompt:
+            system_prompt = f"{system_prompt}\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion."
         conversation: List[Dict] = []
         if system_prompt:
             conversation.append({
@@ -574,7 +582,8 @@ class FrozenQwenSAM(FrozenQwen):
         prompt_parts = []
         if system_prompt:
             prompt_parts.append("<|im_start|>system\n")
-            prompt_parts.append(system_prompt)
+            safe_system = f"{system_prompt}\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion."
+            prompt_parts.append(safe_system)
             prompt_parts.append("\n<|im_end|>\n")
         prompt_parts.append("<|im_start|>user\n")
         prompt_parts.append(

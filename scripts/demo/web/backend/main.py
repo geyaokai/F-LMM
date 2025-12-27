@@ -31,12 +31,12 @@ if str(REPO_ROOT) not in sys.path:
 from scripts.demo.interact import (  # noqa: E402
     SessionState,
     clear_history,
-    handle_ask,
     handle_ground,
     handle_load,
     history_turns,
     load_model,
     parse_args as cli_parse_args,
+    pipeline_default_ask,
 )
 
 APP_VERSION = "0.1.0"
@@ -86,8 +86,8 @@ class LoadImageRequest(SessionIdentRequest):
 
 
 class AskRequest(SessionIdentRequest):
-    mode: Literal["default", "roi", "cot"] = Field(
-        "default", description="Ask mode that mirrors CLI ask/inspect/cot."
+    mode: Literal["default"] = Field(
+        "default", description="Ask mode (default only)."
     )
     question: str = Field("", description="User question.")
     index: Optional[int] = Field(
@@ -101,10 +101,6 @@ class AskRequest(SessionIdentRequest):
     def validate_payload(self):
         if self.mode == "default" and not self.question.strip():
             raise ValueError("Question must not be empty in default mode.")
-        if self.mode in {"roi", "cot"} and self.index is None:
-            raise ValueError("ROI/CoT mode requires `index`.")
-        if self.mode == "cot" and not self.question.strip():
-            raise ValueError("CoT mode requires question.")
         return self
 
 
@@ -286,24 +282,6 @@ def parse_cors_origins(raw: str) -> List[str]:
     if raw == "*":
         return ["*"]
     return [item.strip() for item in raw.split(",") if item.strip()]
-
-
-NEGATION_PATTERNS = (
-    "does not",
-    "doesn't",
-    "not visible",
-    "no ",
-    "cannot see",
-    "can't see",
-    "not shown",
-    "doesnt",
-    "none",
-)
-
-
-def has_negation(text: str) -> bool:
-    lower = (text or "").lower()
-    return any(pat in lower for pat in NEGATION_PATTERNS)
 
 
 def verify_topk() -> int:
@@ -526,63 +504,6 @@ def select_auto_phrases(session: SessionState, limit: int) -> List[int]:
     return indices
 
 
-def _first_bbox(records: List[Dict[str, Any]]) -> Optional[List[int]]:
-    for rec in records:
-        bbox = rec.get("bbox")
-        if bbox and len(bbox) == 4:
-            return [int(v) for v in bbox]
-    return None
-
-
-def auto_roi_resample(
-    backend: BackendState, entry: SessionEntry, question: str
-) -> Optional[Dict[str, Any]]:
-    """DeepSeek-style: auto ground then ROI re-answer.
-
-    Returns a payload with ground records and ROI answer info if available.
-    """
-
-    session = entry.state
-    if session.last_answer is None or session.current_image is None:
-        return None
-    original_answer = session.last_answer.get("output_text", "")
-    indices = select_auto_phrases(session, verify_topk())
-    if not indices:
-        return None
-    with backend.model_lock:
-        handle_ground(session, indices)
-    ground_data = ground_payload(backend, session)
-    bbox = _first_bbox(ground_data.get("records", []))
-    if not bbox:
-        ground_data.update({"used": False, "original_answer": original_answer})
-        return ground_data
-    try:
-        with backend.model_lock:
-            roi_result = session.model.visual_cot_resample(
-                image=session.current_image,
-                question=question,
-                bbox=tuple(bbox),
-                answer_cache=session.last_answer,
-                max_new_tokens=session.args.max_new_tokens,
-            )
-    except Exception as exc:
-        LOGGER.warning("ROI resample failed: %s", exc)
-        ground_data.update({"used": False, "error": str(exc), "original_answer": original_answer})
-        return ground_data
-    roi_answer = roi_result.get("answer_text", "")
-    roi_bbox = roi_result.get("roi_bbox", bbox)
-    ground_data.update(
-        {
-            "used": True,
-            "roi_answer": roi_answer,
-            "roi_bbox": to_native(roi_bbox),
-            "roi_prompt": roi_result.get("prompt"),
-            "original_answer": original_answer,
-        }
-    )
-    return ground_data
-
-
 def latest_assistant_text(session: SessionState) -> Optional[str]:
     for item in reversed(session.history):
         if item.get("role") == "assistant":
@@ -619,13 +540,10 @@ def resolve_image_source(session: SessionState, path: Optional[str], base64_payl
 
 
 def build_ask_cli(request: AskRequest) -> str:
+    # legacy placeholder; only default mode is supported now
     tokens: List[str] = []
     if request.reset_history:
         tokens.append("--reset-history")
-    if request.mode == "roi" and request.index is not None:
-        tokens.extend(["--roi", str(request.index)])
-    elif request.mode == "cot" and request.index is not None:
-        tokens.extend(["--cot", str(request.index)])
     if request.question.strip():
         tokens.append(request.question)
     return shlex.join(tokens) if tokens else ""
@@ -670,14 +588,6 @@ def _with_session(session_id: str) -> SessionEntry:
         return backend.session_store.get(session_id)
     except KeyError as exc:
         raise ValueError(str(exc)) from exc
-
-
-def _run_handle_ask(entry: SessionEntry, request: AskRequest):
-    cli_str = build_ask_cli(request)
-    if not cli_str and request.mode == "default":
-        raise ValueError("Question must not be empty.")
-    with backend.model_lock:
-        handle_ask(entry.state, cli_str)
 
 
 @app.post("/session")
@@ -738,32 +648,26 @@ def ask(request: AskRequest):
     try:
         entry = _with_session(request.session_id)
         with entry.lock:
-            _run_handle_ask(entry, request)
-            data: Dict[str, Any] = {"mode": request.mode}
-            if request.mode == "default":
-                if not entry.state.last_answer:
-                    raise RuntimeError("Model did not return answer.")
-                answer_text = entry.state.last_answer.get("output_text", "")
-                data.update(
-                    {
-                        "answer": answer_text,
-                        "phrases": build_phrase_payload(entry.state),
-                    }
+            data: Dict[str, Any] = {"mode": "default"}
+            with backend.model_lock:
+                result = pipeline_default_ask(
+                    entry.state,
+                    request.question,
+                    reset_history=request.reset_history,
+                    auto_topk=verify_topk(),
                 )
-                verification = auto_roi_resample(backend, entry, request.question)
-                if verification:
-                    data["verification"] = verification
-                    if verification.get("used") and verification.get("roi_answer"):
-                        data["answer"] = verification["roi_answer"]
-                        # Keep history consistent with ROI answer.
-                        if (
-                            entry.state.history
-                            and entry.state.history[-1].get("role") == "assistant"
-                        ):
-                            entry.state.history[-1]["text"] = verification["roi_answer"]
-            else:
-                answer_text = latest_assistant_text(entry.state)
-                data.update({"answer": answer_text})
+            data.update(
+                {
+                    "answer": result.get("answer", ""),
+                    "phrases": build_phrase_payload(entry.state),
+                }
+            )
+            verification = result.get("verification")
+            if verification:
+                # enrich with file URLs
+                ground_data = ground_payload(backend, entry.state)
+                verification.update(ground_data)
+                data["verification"] = verification
             data.update(
                 {
                     "history": snapshot_history(entry.state),
