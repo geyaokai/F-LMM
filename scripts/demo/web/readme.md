@@ -8,10 +8,15 @@
 ## 后端（FastAPI）
 
 1. 激活已有的 FLMM 推理环境（建议 `pip install "fastapi[standard]>=0.115"` 以获得官方 CLI）。
-2. 在仓库根目录运行：
+2. 在仓库根目录运行（任选其一）：
 
    ```bash
    fastapi dev scripts/demo/web/backend/main.py --port 9000
+   ```
+   或
+
+   ```bash
+   uvicorn scripts.demo.web.backend.main:app --host 0.0.0.0 --port 9000 --reload
    ```
    首次启动会根据 `configs/qwen/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.py` 加载模型，约耗时数十秒。
 3. 服务启动后默认暴露以下 REST 接口：
@@ -44,7 +49,30 @@
 
 ## 前端（React）
 
-- 建议在 `frontend/` 使用 Vite + Tailwind 搭建聊天界面，接口层封装上述 REST API。
-- 开发阶段可在 `vite.config.ts` 中通过代理将 `/api` 请求转发到 `http://localhost:9000`，避免 CORS。
+- 已初始化 Vite + React（TypeScript），目录 `scripts/demo/web/frontend`。
+- 首次安装依赖：
+
+  ```bash
+  cd scripts/demo/web/frontend
+  npm install   # 或 npm ci
+  ```
+
+- 启动前端：
+
+  ```bash
+  npm run dev -- --host --port 5173
+  ```
+
+  如需指向后端，启动前可设置：
+
+  ```bash
+  export VITE_API_BASE=http://127.0.0.1:9000
+  ```
+
+  若不设，前端在 5173/4173 端口开发时默认访问 `http://127.0.0.1:9000`；生产预览则使用当前页面域名。
+
+- 结果资源（mask/overlay/roi）由后端挂载到 `/results`，前端会自动拼接 `apiBase + /results/...`。
+
+后续可在此文件补充部署脚本、API 调试示例等内容。
 
 后续可在此文件补充部署脚本、API 调试示例等内容。*** End Patch
