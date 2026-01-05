@@ -419,13 +419,28 @@ class FrozenQwenSAM(FrozenQwen):
             pad_id = self.tokenizer.eos_token_id
         
         # squences: [1, seq_len]
+        # 原始调用，保留便于对比：
+        # sequences = self.qwen_model.generate(
+        #     input_ids=input_ids,
+        #     pixel_values=pixel_values,
+        #     image_grid_thw=image_grid_thw,
+        #     attention_mask=attention_mask,
+        #     max_new_tokens=max_new_tokens or self.max_new_tokens,
+        #     do_sample=False,
+        #     eos_token_id=self.tokenizer.eos_token_id,
+        #     pad_token_id=pad_id,
+        # )
+
         sequences = self.qwen_model.generate(
             input_ids=input_ids,
             pixel_values=pixel_values,
             image_grid_thw=image_grid_thw,
             attention_mask=attention_mask,
             max_new_tokens=max_new_tokens or self.max_new_tokens,
+            # 保持确定性以便下游 grounding/解析，仍用轻度去重抑制重复
             do_sample=False,
+            repetition_penalty=1.12,
+            no_repeat_ngram_size=6,
             eos_token_id=self.tokenizer.eos_token_id,
             pad_token_id=pad_id,
         )
@@ -606,6 +621,16 @@ class FrozenQwenSAM(FrozenQwen):
         roi_embeds = roi_tokens.to(device=device, dtype=inputs_embeds.dtype)
         inputs_embeds[pad_positions[:, 0], pad_positions[:, 1]] = roi_embeds
         pad_id = self.tokenizer.pad_token_id or self.tokenizer.eos_token_id
+        # 原始调用，保留便于对比：
+        # seq = self.qwen_model.generate(
+        #     inputs_embeds=inputs_embeds,
+        #     attention_mask=attention_mask,
+        #     max_new_tokens=max_new_tokens or self.max_new_tokens,
+        #     eos_token_id=self.tokenizer.eos_token_id,
+        #     pad_token_id=pad_id,
+        #     do_sample=False,
+        # )
+
         seq = self.qwen_model.generate(
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
@@ -613,6 +638,8 @@ class FrozenQwenSAM(FrozenQwen):
             eos_token_id=self.tokenizer.eos_token_id,
             pad_token_id=pad_id,
             do_sample=False,
+            repetition_penalty=1.12,
+            no_repeat_ngram_size=6,
         )
         input_len = input_ids.shape[-1]
         if seq.shape[-1] > input_len:

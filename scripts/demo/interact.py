@@ -328,6 +328,7 @@ def extract_phrases_via_model(model, answer_text: str, max_tokens: int, limit: i
     )
     gen = outputs[0, input_ids.shape[-1]:]
     text = model.tokenizer.decode(gen, skip_special_tokens=True).strip()
+    print(f'[Debug] Phrase extraction output: {text}')
     match = re.search(r'\{.*\}', text, flags=re.S)
     phrases: List[str] = []
     if match:
@@ -618,9 +619,12 @@ def pipeline_default_ask(session: SessionState,
         max_new_tokens=session.args.max_new_tokens)
     answer_text = output['output_text']
     offsets = build_offsets(session.model.tokenizer, answer_text)
+    print(f'[Debug]  anwer_text: {answer_text}')
     phrase_texts = extract_phrases_via_model(
         session.model, answer_text, session.args.phrase_max_tokens, session.args.max_phrases)
+    print(f'[Debug] Extracted phrases: {phrase_texts}')  
     candidates = build_phrase_candidates(answer_text, phrase_texts, offsets)
+    print(f'[Debug] Built {len(candidates)} phrase candidates.')
     session.last_answer = output
     session.token_offsets = offsets
     session.phrases = candidates

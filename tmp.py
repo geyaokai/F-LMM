@@ -51,7 +51,22 @@ inputs = processor(
 inputs = inputs.to("cuda")
 
 # Inference: Generation of the output
-generated_ids = model.generate(**inputs, max_new_tokens=128)
+# 原始调用保留在下方注释，便于对比：
+# generated_ids = model.generate(**inputs, max_new_tokens=128)
+
+generated_ids = model.generate(
+    **inputs,
+    max_new_tokens=128,
+    do_sample=True,
+    temperature=0.7,
+    top_p=0.9,
+    top_k=50,
+    repetition_penalty=1.12,
+    no_repeat_ngram_size=6,
+    eos_token_id=processor.tokenizer.eos_token_id,
+)
+
+# 生成后再做截断，防止遗漏的停止符导致的尾部重复
 generated_ids_trimmed = [
     out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
 ]
