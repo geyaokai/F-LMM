@@ -21,6 +21,12 @@ from PIL import Image
 from mmengine.config import Config
 from xtuner.registry import BUILDER
 from xtuner.model.utils import guess_load_checkpoint
+try:
+    import spacy
+    _spacy_nlp = None
+except ImportError:
+    spacy = None
+    _spacy_nlp = None
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -208,7 +214,7 @@ def parse_args():
                              'Format: "0:20GiB,1:20GiB".')
     parser.add_argument('--image', default=None, help='Optional image to preload.')
     parser.add_argument('--max-new-tokens', type=int, default=256)
-    parser.add_argument('--phrase-max-tokens', type=int, default=64)
+    parser.add_argument('--phrase-max-tokens', type=int, default=128)
     parser.add_argument('--max-phrases', type=int, default=6)
     parser.add_argument('--results-dir', default='scripts/demo/results/qwen')
     parser.add_argument('--inspect-prompt', default='Describe this region in detail.')
@@ -295,8 +301,111 @@ def parse_ask_command(arg_str: str) -> AskCommand:
     return AskCommand(mode='default', index=None, question=question,
                       reset_history=opts.reset_history)
 
+def _get_spacy():
+    global _spacy_nlp
+    if _spacy_nlp is not None:
+        return _spacy_nlp
+    if spacy is None:
+        return None
+    try:
+        _spacy_nlp = spacy.load("en_core_web_sm")
+    except Exception:
+        _spacy_nlp = None
+    return _spacy_nlp
 
-def extract_phrases_via_model(model, answer_text: str, max_tokens: int, limit: int) -> List[str]:
+
+def _extract_phrases_spacy(answer_text: str, limit: int) -> List[Tuple[str, Tuple[int, int]]]:
+    nlp = _get_spacy()
+    if nlp is None:
+        return []
+    doc = nlp(answer_text)
+    seen = set()
+    phrases: List[Tuple[str, Tuple[int, int]]] = []
+
+    def add_phrase(text: str, start: int, end: int):
+        cleaned = text.strip()
+        if not cleaned:
+            return
+        key = cleaned.lower()
+        if key in seen:
+            return
+        word_count = len(cleaned.split())
+        if word_count == 0 or word_count > 3:
+            return
+        seen.add(key)
+        phrases.append((cleaned, (start, end)))
+
+    for chunk in doc.noun_chunks:
+        add_phrase(chunk.text, chunk.start_char, chunk.end_char)
+
+    for token in doc:
+        if token.pos_ in {"NOUN", "PROPN"} and not token.is_stop and token.is_alpha:
+            add_phrase(token.text, token.idx, token.idx + len(token.text))
+
+    return phrases[:limit]
+
+
+def _rerank_phrases_with_model(model, answer_text: str,
+                               candidates: List[Tuple[str, Tuple[int, int]]],
+                               max_tokens: int,
+                               limit: int) -> List[Tuple[str, Tuple[int, int]]]:
+    if not candidates:
+        return []
+    numbered = [f"{i}. {p[0]}" for i, p in enumerate(candidates)]
+    prompt = (
+        f"<|im_start|>system\n"
+        "Given an answer text and its candidate noun phrases, pick the most relevant phrases (keep original text exactly). "
+        f"Return JSON only: {{\"phrases\": [\"phrase_a\", ...]}} with at most {limit} items.\n"
+        "Do not invent new phrases.\n"
+        "<|im_end|>\n"
+        "<|im_start|>user\n"
+        f"Answer:\n{answer_text}\n"
+        "Candidates:\n" + "\n".join(numbered) + "\n"
+        f"Select up to {limit}.\n"
+        "<|im_end|>\n"
+        "<|im_start|>assistant\n"
+    )
+    encoded = model.tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
+    input_ids = encoded['input_ids'].to(model.qwen_device)
+    attention_mask = encoded.get('attention_mask')
+    if attention_mask is None:
+        attention_mask = torch.ones_like(input_ids)
+    else:
+        attention_mask = attention_mask.to(model.qwen_device)
+    pad_id = model.tokenizer.pad_token_id or model.tokenizer.eos_token_id
+    outputs = model.qwen_model.generate(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        max_new_tokens=max_tokens,
+        do_sample=False,
+        eos_token_id=model.tokenizer.eos_token_id,
+        pad_token_id=pad_id,
+    )
+    gen = outputs[0, input_ids.shape[-1]:]
+    text = model.tokenizer.decode(gen, skip_special_tokens=True).strip()
+    print(f'[Debug] Phrase rerank output: {text}')
+    chosen: List[str] = []
+    match = re.search(r'\{.*\}', text, flags=re.S)
+    if match:
+        try:
+            data = json.loads(match.group(0))
+            raw_list = data.get('phrases', [])
+            chosen = [s for s in raw_list if isinstance(s, str)]
+        except json.JSONDecodeError:
+            chosen = []
+    if not chosen:
+        return candidates[:limit]
+    chosen_set = {c.lower().strip() for c in chosen}
+    filtered = [p for p in candidates if p[0].lower() in chosen_set]
+    if not filtered:
+        return candidates[:limit]
+    return filtered[:limit]
+
+
+def extract_phrases_via_model(model, answer_text: str, max_tokens: int, limit: int) -> List[Tuple[str, Tuple[int, int]]]:
+    spacy_candidates = _extract_phrases_spacy(answer_text, limit=limit * 3)
+    if spacy_candidates:
+        return _rerank_phrases_with_model(model, answer_text, spacy_candidates, max_tokens, limit)
     prompt = (
         "<|im_start|>system\n"
         "You extract distinct noun phrases from the assistant answer. "
@@ -343,13 +452,13 @@ def extract_phrases_via_model(model, answer_text: str, max_tokens: int, limit: i
     if not phrases:
         candidates = re.split(r'[\n,;/]+', text)
         phrases = [c.strip() for c in candidates if c.strip()]
-    dedup = []
+    dedup: List[Tuple[str, Tuple[int, int]]] = []
     seen = set()
     for phrase in phrases:
         key = phrase.lower()
         if not key or key in seen:
             continue
-        dedup.append(phrase)
+        dedup.append((phrase, (-1, -1)))
         seen.add(key)
         if len(dedup) >= limit:
             break
@@ -385,23 +494,26 @@ def char_to_token(offsets: Sequence[Tuple[int, int]], char_pos: int) -> int:
 
 
 def build_phrase_candidates(answer_text: str,
-                            phrase_texts: List[str],
+                            phrase_texts: List[Tuple[str, Tuple[int, int]]],
                             offsets: List[Tuple[int, int]]) -> List[PhraseCandidate]:
     lower_text = answer_text.lower()
     cursor = 0
     candidates: List[PhraseCandidate] = []
-    for phrase in phrase_texts:
+    for phrase, span in phrase_texts:
         raw = phrase.strip()
         if not raw:
             continue
         target = raw.lower()
-        start = lower_text.find(target, cursor)
-        if start == -1:
-            start = lower_text.find(target)
-        if start == -1:
-            continue
-        end = start + len(raw)
-        cursor = end
+        if span != (-1, -1):
+            start, end = span
+        else:
+            start = lower_text.find(target, cursor)
+            if start == -1:
+                start = lower_text.find(target)
+            if start == -1:
+                continue
+            end = start + len(raw)
+            cursor = end
         token_start = char_to_token(offsets, start)
         token_end = char_to_token(offsets, max(start, end - 1)) + 1
         if token_end <= token_start:
@@ -622,7 +734,7 @@ def pipeline_default_ask(session: SessionState,
     print(f'[Debug]  anwer_text: {answer_text}')
     phrase_texts = extract_phrases_via_model(
         session.model, answer_text, session.args.phrase_max_tokens, session.args.max_phrases)
-    print(f'[Debug] Extracted phrases: {phrase_texts}')  
+    print(f'[Debug] Extracted phrases: {[p[0] for p in phrase_texts]}')  
     candidates = build_phrase_candidates(answer_text, phrase_texts, offsets)
     print(f'[Debug] Built {len(candidates)} phrase candidates.')
     session.last_answer = output

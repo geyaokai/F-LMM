@@ -28,6 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# Import internal modules from the F-LMM project
 from scripts.demo.interact import (  # noqa: E402
     SessionState,
     clear_history,
@@ -42,6 +43,8 @@ from scripts.demo.interact import (  # noqa: E402
 APP_VERSION = "0.1.0"
 LOGGER = logging.getLogger("flmm.web")
 
+
+# --- Request Models ---
 
 class APIModel(BaseModel):
     """Base Pydantic model with strict field checking."""
@@ -118,6 +121,7 @@ class SessionResetRequest(SessionIdentRequest):
 
 @dataclass
 class SessionEntry:
+    """Represents a single user session with its own state and lock."""
     session_id: str
     state: SessionState
     created_at: datetime
@@ -125,11 +129,15 @@ class SessionEntry:
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def touch(self):
+        """Update the last active timestamp."""
         self.last_active = datetime.utcnow()
 
 
 class SessionStore:
-    """In-memory session registry with TTL + cleanup thread."""
+    """
+    In-memory session registry with TTL (Time-To-Live) + cleanup thread.
+    Manages multiple user sessions concurrently.
+    """
 
     def __init__(
         self,
@@ -341,7 +349,10 @@ def build_args_from_env() -> argparse.Namespace:
 
 
 class BackendState:
-    """Holds model/config/session store for FastAPI handlers."""
+    """
+    Global backend state holding the model, configuration, and session store.
+    Initialized once when the FastAPI app starts.
+    """
 
     def __init__(self):
         configure_logging()
@@ -354,6 +365,8 @@ class BackendState:
         LOGGER.info("Loading model...")
         if args.checkpoint:
             LOGGER.info("Checkpoint override resolved path: %s (exists=%s)", args.checkpoint, Path(args.checkpoint).exists())
+        
+        # Load the model using the provided config and args
         model = load_model(cfg, args)
         self.args = args
         self.cfg = cfg
@@ -361,6 +374,8 @@ class BackendState:
         self.results_dir = Path(args.results_dir).expanduser().resolve()
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.results_mount = ensure_mount_path(os.getenv("FLMM_WEB_RESULTS_MOUNT", "/results"))
+        
+        # Session management settings
         ttl_minutes = env_int("FLMM_WEB_SESSION_TTL_MINUTES", 60)
         cleanup_seconds = env_int("FLMM_WEB_SESSION_SWEEP_SECONDS", 300)
         self.session_store = SessionStore(
@@ -370,6 +385,7 @@ class BackendState:
             ttl=timedelta(minutes=max(ttl_minutes, 1)),
             cleanup_interval=cleanup_seconds,
         )
+        # Lock to ensure thread-safe model inference
         self.model_lock = threading.Lock()
         LOGGER.info(
             "Backend ready: ttl=%dmin results=%s max_new_tokens=%s max_history_turns=%s",
@@ -380,6 +396,7 @@ class BackendState:
         )
 
     def result_url(self, path: Optional[Path]) -> Optional[str]:
+        """Convert a local result path to a URL accessible by the frontend."""
         if path is None:
             return None
         try:
@@ -408,6 +425,15 @@ def error_response(message: str, status_code: int = 400):
         status_code=status_code,
         content=build_response(status="error", message=message),
     )
+
+
+def _clean_answer(text: str) -> str:
+    """Remove internal placeholders (e.g., <|image_pad|>) for frontend display."""
+    if not text:
+        return text
+    cleaned = text.replace("<|image_pad|>", "")
+    cleaned = " ".join(cleaned.split())
+    return cleaned.strip()
 
 
 def snapshot_history(session: SessionState) -> List[Dict[str, str]]:
@@ -549,15 +575,20 @@ def build_ask_cli(request: AskRequest) -> str:
     return shlex.join(tokens) if tokens else ""
 
 
+# --- FastAPI App Setup ---
+
 backend = BackendState()
 app = FastAPI(title="F-LMM Web Backend", version=APP_VERSION)
 app.state.backend = backend
+
+# Mount the results directory to serve static files (images, masks, etc.)
 app.mount(
     backend.results_mount,
     StaticFiles(directory=str(backend.results_dir), html=False),
     name="results",
 )
-# 开发环境允许跨域，便于 Vite/本地前端调用
+
+# Enable CORS for development (allows frontend to call the backend from different origins)
 cors_env = os.getenv("FLMM_WEB_CORS_ORIGINS", "*")
 app.add_middleware(
     CORSMiddleware,
@@ -570,11 +601,13 @@ app.add_middleware(
 
 @app.on_event("shutdown")
 def _shutdown():
+    """Cleanup session store on application shutdown."""
     backend.session_store.shutdown()
 
 
 @app.get("/healthz")
 def healthz():
+    """Health check endpoint."""
     return build_response(
         data={
             "version": APP_VERSION,
@@ -584,6 +617,7 @@ def healthz():
 
 
 def _with_session(session_id: str) -> SessionEntry:
+    """Helper to retrieve a session or raise an error if not found."""
     try:
         return backend.session_store.get(session_id)
     except KeyError as exc:
@@ -593,6 +627,7 @@ def _with_session(session_id: str) -> SessionEntry:
 @app.post("/session")
 @app.post("/session/create")
 def create_session(request: SessionCreateRequest):
+    """Create a new session, optionally preloading an image."""
     try:
         entry = backend.session_store.create_session()
         if request.image_path or request.image_base64:
@@ -607,6 +642,7 @@ def create_session(request: SessionCreateRequest):
 
 @app.post("/session/reset")
 def reset_session(request: SessionResetRequest):
+    """Reset the state of an existing session."""
     try:
         entry = backend.session_store.reset(request.session_id)
         return build_response(
@@ -619,6 +655,7 @@ def reset_session(request: SessionResetRequest):
 
 @app.delete("/session/{session_id}")
 def delete_session(session_id: str):
+    """Delete a session and its associated workspace."""
     try:
         backend.session_store.delete(session_id)
         return build_response(message="Session deleted.")
@@ -629,6 +666,7 @@ def delete_session(session_id: str):
 
 @app.post("/load_image")
 def load_image(request: LoadImageRequest):
+    """Load an image into an existing session."""
     try:
         entry = _with_session(request.session_id)
         source = resolve_image_source(entry.state, request.image_path, request.image_base64)
@@ -645,29 +683,48 @@ def load_image(request: LoadImageRequest):
 
 @app.post("/ask")
 def ask(request: AskRequest):
+    """
+    Handle a user question. 
+    Pipeline: Generate answer -> Extract phrases -> Auto-ground -> ROI re-answer.
+    """
     try:
         entry = _with_session(request.session_id)
         with entry.lock:
             data: Dict[str, Any] = {"mode": "default"}
             with backend.model_lock:
+                # Run the inference pipeline
                 result = pipeline_default_ask(
                     entry.state,
                     request.question,
                     reset_history=request.reset_history,
                     auto_topk=verify_topk(),
                 )
+            
+            # Clean the answer for display (remove internal tokens)
+            answer = _clean_answer(result.get("answer", ""))
+            print("[debug]Answer :", answer)
+            
             data.update(
                 {
-                    "answer": result.get("answer", ""),
+                    "answer": answer,
                     "phrases": build_phrase_payload(entry.state),
                 }
             )
+            
             verification = result.get("verification")
             if verification:
-                # enrich with file URLs
+                # Enrich verification data with file URLs for masks/ROIs
                 ground_data = ground_payload(backend, entry.state)
                 verification.update(ground_data)
+                
+                # Clean ROI prompt if present
+                roi_prompt_raw = verification.get("roi_prompt")
+                if isinstance(roi_prompt_raw, str):
+                    verification["roi_prompt_raw"] = roi_prompt_raw
+                    verification["roi_prompt"] = _clean_answer(roi_prompt_raw)
+                
                 data["verification"] = verification
+            
             data.update(
                 {
                     "history": snapshot_history(entry.state),
@@ -682,6 +739,7 @@ def ask(request: AskRequest):
 
 @app.post("/ground")
 def ground(request: GroundRequest):
+    """Manually trigger grounding for specific phrase indices."""
     try:
         entry = _with_session(request.session_id)
         with entry.lock:
@@ -697,6 +755,7 @@ def ground(request: GroundRequest):
 
 @app.post("/clear")
 def clear(request: ClearRequest):
+    """Clear the conversation history for a session."""
     try:
         entry = _with_session(request.session_id)
         with entry.lock:
