@@ -364,6 +364,7 @@ def build_args_from_env() -> argparse.Namespace:
     args.extra_prompt = os.getenv("FLMM_WEB_EXTRA_PROMPT", args.extra_prompt or "")
     args.no_sam = env_bool("FLMM_WEB_NO_SAM", args.no_sam)
     args.image = None
+    args.no_model = env_bool("FLMM_WEB_NO_MODEL", False)
     return args
 
 
@@ -376,17 +377,22 @@ class BackendState:
     def __init__(self):
         configure_logging()
         args = build_args_from_env()
-        cfg_path = Path(args.config)
-        if not cfg_path.is_absolute():
-            cfg_path = (REPO_ROOT / cfg_path).resolve()
-        LOGGER.info("Loading config: %s", cfg_path)
-        cfg = Config.fromfile(cfg_path)
-        LOGGER.info("Loading model...")
-        if args.checkpoint:
-            LOGGER.info("Checkpoint override resolved path: %s (exists=%s)", args.checkpoint, Path(args.checkpoint).exists())
-        
-        # Load the model using the provided config and args
-        model = load_model(cfg, args)
+        cfg = None
+        model = None
+        if args.no_model:
+            LOGGER.info("FLMM_WEB_NO_MODEL=1 -> backend will not load the model; use /tasks with worker for inference.")
+        else:
+            cfg_path = Path(args.config)
+            if not cfg_path.is_absolute():
+                cfg_path = (REPO_ROOT / cfg_path).resolve()
+            LOGGER.info("Loading config: %s", cfg_path)
+            cfg = Config.fromfile(cfg_path)
+            LOGGER.info("Loading model...")
+            if args.checkpoint:
+                LOGGER.info("Checkpoint override resolved path: %s (exists=%s)", args.checkpoint, Path(args.checkpoint).exists())
+            
+            # Load the model using the provided config and args
+            model = load_model(cfg, args)
         self.args = args
         self.cfg = cfg
         self.model = model
@@ -463,13 +469,14 @@ def snapshot_history(session: SessionState) -> List[Dict[str, str]]:
     return [{"role": item.get("role", ""), "text": item.get("text", "")} for item in session.history]
 
 
-def image_info(session: SessionState) -> Optional[Dict[str, Any]]:
+def image_info(backend: BackendState, session: SessionState) -> Optional[Dict[str, Any]]:
     if session.current_image is None:
         return None
     width, height = session.current_image.size
     path_str = str(session.current_image_path) if session.current_image_path else None
     name = session.current_image_path.name if session.current_image_path else None
-    return {"name": name, "path": path_str, "width": width, "height": height}
+    url = backend.result_url(session.current_image_path) if session.current_image_path else None
+    return {"name": name, "path": path_str, "width": width, "height": height, "url": url}
 
 
 def to_native(obj: Any) -> Any:
@@ -498,7 +505,7 @@ def session_payload(backend: BackendState, entry: SessionEntry) -> Dict[str, Any
         "session_dir_url": backend.result_url(session.session_dir),
         "history": snapshot_history(session),
         "history_turns": history_turns(session),
-        "image": image_info(session),
+        "image": image_info(backend, session),
         "created_at": entry.created_at.isoformat(),
         "last_active": entry.last_active.isoformat(),
     }
@@ -721,6 +728,8 @@ def ask(request: AskRequest):
     Pipeline: Generate answer -> Extract phrases -> Auto-ground -> ROI re-answer.
     """
     try:
+        if backend.model is None:
+            return error_response("Model disabled (FLMM_WEB_NO_MODEL=1). Please enqueue ASK via /tasks.", status_code=503)
         entry = _with_session(request.session_id)
         with entry.lock:
             data: Dict[str, Any] = {"mode": "default"}
@@ -774,6 +783,8 @@ def ask(request: AskRequest):
 def ground(request: GroundRequest):
     """Manually trigger grounding for specific phrase indices."""
     try:
+        if backend.model is None:
+            return error_response("Model disabled (FLMM_WEB_NO_MODEL=1). Please enqueue GROUND via /tasks.", status_code=503)
         entry = _with_session(request.session_id)
         with entry.lock:
             with backend.model_lock:

@@ -11,8 +11,9 @@ SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 def connect(db_path: Path) -> sqlite3.Connection:
     """Open a SQLite connection with queue-friendly pragmas."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn

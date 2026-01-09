@@ -10,8 +10,28 @@ TASK_TYPES = {"ASK", "GROUND", "ATTN_I2T", "ATTN_T2I"}
 TASK_STATUSES = {"PENDING", "RUNNING", "DONE", "FAILED"}
 
 
+def _json_default(obj: Any) -> Any:
+    """Convert common non-JSON types (numpy/torch scalars, tensors, Paths)."""
+    if hasattr(obj, "item"):
+        try:
+            return obj.item()
+        except Exception:
+            pass
+    if hasattr(obj, "tolist"):
+        try:
+            return obj.tolist()
+        except Exception:
+            pass
+    if hasattr(obj, "as_posix"):
+        try:
+            return obj.as_posix()
+        except Exception:
+            pass
+    return str(obj)
+
+
 def _serialize(obj: Any) -> str:
-    return json.dumps(obj or {}, separators=(",", ":"))
+    return json.dumps(obj or {}, separators=(",", ":"), default=_json_default)
 
 
 def _deserialize(blob: Optional[str]) -> Optional[Any]:
@@ -56,6 +76,15 @@ def enqueue_task(
         """
         INSERT INTO tasks (type, status, session_id, turn_idx, turn_uid, input_json)
         VALUES (?, 'PENDING', ?, ?, ?, ?)
+        ON CONFLICT(session_id, turn_idx)
+        DO UPDATE SET
+            type=excluded.type,
+            status='PENDING',
+            turn_uid=excluded.turn_uid,
+            input_json=excluded.input_json,
+            output_json=NULL,
+            error=NULL,
+            worker_id=NULL
         """,
         (task_type, session_id, turn_idx, turn_uid, payload),
     )

@@ -108,12 +108,16 @@ class WorkerRuntime:
         self.results_dir = Path(self.args.results_dir).expanduser().resolve()
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.sessions: Dict[str, SessionState] = {}
+        self.results_mount = os.getenv("FLMM_WEB_RESULTS_MOUNT", "/results").rstrip("/")
+        if self.results_mount and not self.results_mount.startswith("/"):
+            self.results_mount = "/" + self.results_mount
 
     def _rel(self, path: Optional[Path]) -> Optional[str]:
         if path is None:
             return None
         try:
-            return path.resolve().relative_to(self.results_dir).as_posix()
+            rel = path.resolve().relative_to(self.results_dir).as_posix().lstrip("/")
+            return f"{self.results_mount}/{rel}" if rel else self.results_mount
         except ValueError:
             return path.as_posix()
 
@@ -199,9 +203,12 @@ class WorkerRuntime:
         return {
             "type": "ASK",
             "turn_idx": session.turn_idx,
+            "history": [{"role": m["role"], "text": m["text"]} for m in session.history],
             "history_turns": history_turns(session),
             "answer": result.get("answer"),
             "phrases": self._serialize_phrases(session),
+            "verification": self._serialize_ground(session),
+            # backward-compatible alias
             "ground": self._serialize_ground(session),
         }
 
@@ -215,11 +222,17 @@ class WorkerRuntime:
         records = handle_ground(session, [int(i) for i in indices])
         if not records:
             raise ValueError("GROUND produced no records; check payload or previous ASK.")
+        
+        ground_data = self._serialize_ground(session)
         return {
             "type": "GROUND",
             "turn_idx": session.turn_idx,
+            "history": [{"role": m["role"], "text": m["text"]} for m in session.history],
             "history_turns": history_turns(session),
-            "ground": self._serialize_ground(session),
+            "verification": ground_data,
+            "records": ground_data.get("records"),
+            # backward-compatible alias
+            "ground": ground_data,
         }
 
     def handle_attention(self, task: Dict[str, Any], payload: Dict[str, Any], kind: str) -> Dict[str, Any]:
