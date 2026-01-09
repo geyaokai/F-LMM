@@ -5,6 +5,8 @@ import os
 import re
 import shlex
 import sys
+import uuid
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +35,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 # import pdb;pdb.set_trace()
 from scripts.demo.utils import colors  # noqa: E402
+from scripts.demo.web.backend.task_queue.paths import SessionPaths  # noqa: E402
 @dataclass
 class PhraseCandidate:
     text: str
@@ -65,18 +68,26 @@ class SessionState:
     model: Any
     args: argparse.Namespace
     result_root: Path
+    session_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     current_image: Optional[Image.Image] = None
     current_image_path: Optional[Path] = None
     last_answer: Optional[dict] = None
     phrases: List[PhraseCandidate] = field(default_factory=list)
     token_offsets: Optional[List[Tuple[int, int]]] = None
-    ground_counter: int = 0
+    ground_id: int = 0
+    attn_counters: Dict[str, int] = field(default_factory=lambda: {"i2t": 0, "t2i": 0})
     last_records: List[GroundRecord] = field(default_factory=list)
     history: List[Dict[str, str]] = field(default_factory=list)
+    turn_idx: int = 0
+    session_paths: SessionPaths = field(init=False)
+    session_dir: Path = field(init=False)
 
     def __post_init__(self):
-        self.session_dir = self.result_root / datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.session_paths = SessionPaths(self.result_root, self.session_id)
+        self.session_dir = self.session_paths.session_root
         self.session_dir.mkdir(parents=True, exist_ok=True)
+        self.session_paths.turns_dir.mkdir(parents=True, exist_ok=True)
+        self.session_paths.images_dir.mkdir(parents=True, exist_ok=True)
 
     def reset_answer(self):
         self.last_answer = None
@@ -84,6 +95,8 @@ class SessionState:
         self.token_offsets = None
         self.last_records = []
         self.history.clear()
+        self.ground_id = 0
+        self.attn_counters = {"i2t": 0, "t2i": 0}
 
 
 def append_history_entry(session: SessionState, role: str, text: str):
@@ -549,7 +562,7 @@ def save_ground_outputs(image: Image.Image,
                         masks: np.ndarray,
                         labels: List[str],
                         session: SessionState) -> List[GroundRecord]:
-    run_dir = session.session_dir / f'round_{session.ground_counter:02d}'
+    run_dir = session.session_paths.ground_dir(session.turn_idx, session.ground_id)
     run_dir.mkdir(parents=True, exist_ok=True)
     base_np = np.array(image).astype(np.float32)
     records: List[GroundRecord] = []
@@ -619,8 +632,16 @@ def ensure_min_image_size(image: Image.Image, min_side: int) -> Tuple[Image.Imag
 
 def handle_load(session: SessionState, path: str):
     image, resolved = load_image(path)
+    target = session.session_paths.image_path(Path(resolved).name)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if Path(resolved).resolve() != target.resolve():
+            shutil.copy2(resolved, target)
+    except Exception:
+        # Fallback to saving via PIL if copy fails (e.g., remote streams)
+        image.save(target)
     session.current_image = image
-    session.current_image_path = resolved
+    session.current_image_path = target
     session.reset_answer()
     print(f'[Load] Image loaded: {session.current_image_path.name} {image.size}')
 
@@ -705,8 +726,8 @@ def perform_ground(session: SessionState, indices: List[int]) -> List[GroundReco
         use_sam=not session.args.no_sam)
     mask_tensor = sam_masks if not session.args.no_sam else pred_masks
     masks = mask_tensor.detach().cpu().numpy()
-    session.ground_counter += 1
     records = save_ground_outputs(session.current_image, masks, labels, session)
+    session.ground_id += 1
     for rec, span, candidate in zip(records, positive_ids, selected):
         rec.token_span = span
         rec.char_span = candidate.char_span
@@ -717,11 +738,17 @@ def perform_ground(session: SessionState, indices: List[int]) -> List[GroundReco
 def pipeline_default_ask(session: SessionState,
                          question: str,
                          reset_history: bool = False,
-                         auto_topk: int = 1) -> Dict[str, Any]:
+                         auto_topk: int = 1,
+                         turn_idx: Optional[int] = None) -> Dict[str, Any]:
     """Unified pipeline: answer -> auto ground -> ROI re-answer (DeepSeek-style)."""
     ensure_image(session)
     if reset_history:
         clear_history(session)
+    resolved_turn_idx = history_turns(session) if turn_idx is None else int(turn_idx)
+    session.turn_idx = resolved_turn_idx
+    session.ground_id = 0
+    session.attn_counters = {"i2t": 0, "t2i": 0}
+    session.session_paths.turn_dir(session.turn_idx).mkdir(parents=True, exist_ok=True)
     if not question:
         raise ValueError('Question must not be empty.')
     output = session.model.answer(

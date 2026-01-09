@@ -40,6 +40,10 @@ from scripts.demo.interact import (  # noqa: E402
     pipeline_default_ask,
 )
 
+from scripts.demo.web.backend.task_queue.db import connect as tq_connect, init_db as tq_init_db  # noqa: E402
+from scripts.demo.web.backend.task_queue.queue import enqueue_task, get_task  # noqa: E402
+from scripts.demo.web.backend.task_queue.paths import SessionPaths  # noqa: E402
+
 APP_VERSION = "0.1.0"
 LOGGER = logging.getLogger("flmm.web")
 
@@ -117,6 +121,14 @@ class ClearRequest(SessionIdentRequest):
 
 class SessionResetRequest(SessionIdentRequest):
     pass
+
+
+class TaskEnqueueRequest(APIModel):
+    type: Literal['ASK', 'GROUND', 'ATTN_I2T', 'ATTN_T2I'] = Field(..., description='Task type')
+    session_id: str = Field(..., description='Session identifier')
+    payload: Dict[str, Any] = Field(default_factory=dict, description='Task input payload')
+    turn_idx: Optional[int] = Field(None, description='Optional turn index for dedupe')
+    turn_uid: Optional[str] = Field(None, description='Optional turn UID')
 
 
 @dataclass
@@ -239,17 +251,24 @@ class SessionStore:
         state.current_image = None
         state.current_image_path = None
         state.last_records = []
-        state.ground_counter = 0
+        state.ground_id = 0
+        state.attn_counters = {"i2t": 0, "t2i": 0}
+        state.turn_idx = 0
 
     def _reset_workspace(self, entry: SessionEntry):
-        suffix = entry.session_id.split("-", 1)[0]
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        millis = int(time.time() * 1000) % 1000
-        new_dir = self._result_root / f"{timestamp}_{millis:03d}_{suffix}"
-        self._remove_dir(entry.state.session_dir)
-        new_dir.mkdir(parents=True, exist_ok=True)
-        entry.state.session_dir = new_dir
-        entry.state.ground_counter = 0
+        entry.state.session_id = entry.session_id
+        entry.state.session_paths = SessionPaths(self._result_root, entry.session_id)
+        session_root = entry.state.session_paths.session_root
+        # Remove any previous workspace to ensure a clean slate
+        self._remove_dir(getattr(entry.state, "session_dir", session_root))
+        self._remove_dir(session_root)
+        session_root.mkdir(parents=True, exist_ok=True)
+        entry.state.session_paths.turns_dir.mkdir(parents=True, exist_ok=True)
+        entry.state.session_paths.images_dir.mkdir(parents=True, exist_ok=True)
+        entry.state.session_dir = session_root
+        entry.state.turn_idx = 0
+        entry.state.ground_id = 0
+        entry.state.attn_counters = {"i2t": 0, "t2i": 0}
 
     def _remove_dir(self, path: Path):
         try:
@@ -374,6 +393,10 @@ class BackendState:
         self.results_dir = Path(args.results_dir).expanduser().resolve()
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.results_mount = ensure_mount_path(os.getenv("FLMM_WEB_RESULTS_MOUNT", "/results"))
+        task_db_env = os.getenv("FLMM_WEB_TASK_DB")
+        self.task_db_path = Path(task_db_env).expanduser().resolve() if task_db_env else (self.results_dir / "task_queue.db")
+        self.task_conn = tq_connect(self.task_db_path)
+        tq_init_db(self.task_conn)
         
         # Session management settings
         ttl_minutes = env_int("FLMM_WEB_SESSION_TTL_MINUTES", 60)
@@ -510,12 +533,18 @@ def ground_payload(backend: BackendState, session: SessionState) -> Dict[str, An
                 "bbox": to_native(record.bbox),
             }
         )
-    round_idx = max(session.ground_counter - 1, 0)
-    round_dir = session.session_dir / f"round_{round_idx:02d}"
+    ground_idx = max(session.ground_id - 1, 0)
+    turn_dir = session.session_paths.turn_dir(session.turn_idx)
+    ground_dir = session.session_paths.ground_dir(session.turn_idx, ground_idx)
     return {
         "records": records,
-        "round_dir": backend.relative_result_path(round_dir),
-        "round_url": backend.result_url(round_dir),
+        "turn_dir": backend.relative_result_path(turn_dir),
+        "turn_url": backend.result_url(turn_dir),
+        "ground_dir": backend.relative_result_path(ground_dir),
+        "ground_url": backend.result_url(ground_dir),
+        # backward-compatible aliases
+        "round_dir": backend.relative_result_path(ground_dir),
+        "round_url": backend.result_url(ground_dir),
     }
 
 
@@ -550,8 +579,8 @@ def decode_base64_image(session: SessionState, payload: str) -> Path:
         ext = ".jpg"
     elif "gif" in header_lower:
         ext = ".gif"
-    session.session_dir.mkdir(parents=True, exist_ok=True)
-    file_path = session.session_dir / f"upload_{int(time.time() * 1000)}{ext}"
+    session.session_paths.images_dir.mkdir(parents=True, exist_ok=True)
+    file_path = session.session_paths.images_dir / f"upload_{int(time.time() * 1000)}{ext}"
     file_path.write_bytes(binary)
     return file_path
 
@@ -603,6 +632,10 @@ app.add_middleware(
 def _shutdown():
     """Cleanup session store on application shutdown."""
     backend.session_store.shutdown()
+    try:
+        backend.task_conn.close()
+    except Exception:
+        pass
 
 
 @app.get("/healthz")
@@ -750,6 +783,50 @@ def ground(request: GroundRequest):
         return build_response(data=data)
     except Exception as exc:
         LOGGER.exception("Ground failed: %s", exc)
+        return error_response(str(exc))
+
+
+@app.post("/tasks")
+def enqueue_task_api(request: TaskEnqueueRequest):
+    """Enqueue a task for asynchronous processing."""
+    try:
+        entry = _with_session(request.session_id)
+        payload = dict(request.payload or {})
+        # Provide default turn index when absent
+        turn_idx = request.turn_idx
+        if turn_idx is None:
+            if request.type == "ASK":
+                turn_idx = history_turns(entry.state)
+            else:
+                turn_idx = entry.state.turn_idx
+        # Ensure worker can load the current image for ASK tasks
+        if request.type == "ASK" and not payload.get("image_path"):
+            if entry.state.current_image_path:
+                payload["image_path"] = str(entry.state.current_image_path)
+        task_id = enqueue_task(
+            backend.task_conn,
+            request.type,
+            request.session_id,
+            payload,
+            turn_idx=turn_idx,
+            turn_uid=request.turn_uid,
+        )
+        return build_response(data={"task_id": task_id})
+    except Exception as exc:
+        LOGGER.exception("Enqueue task failed: %s", exc)
+        return error_response(str(exc))
+
+
+@app.get("/tasks/{task_id}")
+def poll_task(task_id: int):
+    """Poll task status and output."""
+    try:
+        task = get_task(backend.task_conn, task_id)
+        if not task:
+            return error_response("Task not found.", status_code=404)
+        return build_response(data={"task": task})
+    except Exception as exc:
+        LOGGER.exception("Poll task failed: %s", exc)
         return error_response(str(exc))
 
 
