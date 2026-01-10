@@ -72,6 +72,15 @@ class QueueTests(unittest.TestCase):
         # mark done to ensure no locking
         mark_done(self.conn, claimed["id"], {"answer": "ok"})
 
+    def test_ground_same_turn_allows_multiple(self):
+        enqueue_task(self.conn, "GROUND", "sess5", {"i": 1}, turn_idx=0)
+        enqueue_task(self.conn, "GROUND", "sess5", {"i": 2}, turn_idx=0)
+        first = claim_next_task(self.conn, "worker-e")
+        second = claim_next_task(self.conn, "worker-e")
+        ids = {first["id"], second["id"]}
+        self.assertEqual(len(ids), 2)
+        self.assertEqual({first["input_json"]["i"], second["input_json"]["i"]}, {1, 2})
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

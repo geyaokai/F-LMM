@@ -431,7 +431,7 @@ class FrozenQwenSAM(FrozenQwen):
         #     pad_token_id=pad_id,
         # )
 
-        sequences = self.qwen_model.generate(
+        gen_out = self.qwen_model.generate(
             input_ids=input_ids,
             pixel_values=pixel_values,
             image_grid_thw=image_grid_thw,
@@ -443,23 +443,38 @@ class FrozenQwenSAM(FrozenQwen):
             no_repeat_ngram_size=6,
             eos_token_id=self.tokenizer.eos_token_id,
             pad_token_id=pad_id,
-        )
-        input_len = input_ids.shape[-1]
-        output_ids = sequences[0, input_len:].detach().cpu()
-        output_text = self.tokenizer.decode(output_ids, skip_special_tokens=True)
-        full_attention_mask = torch.ones_like(sequences)
-        # outputs: Seq2SeqLMOutput
-        # outputs.attentions shape is [num_layers, batch, num_heads, seq_len, seq_len]
-        # output.hiiden_states shape is [num_layerslen+1, batch, seq_len, dim]
-        outputs = self.qwen_model(
-            input_ids=sequences,
-            pixel_values=pixel_values,
-            image_grid_thw=image_grid_thw,
-            attention_mask=full_attention_mask,
+            return_dict_in_generate=True,
             output_attentions=True,
             output_hidden_states=True,
-            return_dict=True)
-        
+        )
+        sequences = gen_out if isinstance(gen_out, torch.Tensor) else gen_out.sequences
+        gen_attentions = None
+        gen_hidden_states = None
+        if not isinstance(gen_out, torch.Tensor):
+            gen_attentions = getattr(gen_out, 'attentions', None)
+            gen_hidden_states = getattr(gen_out, 'hidden_states', None)
+            if gen_hidden_states is None:
+                gen_hidden_states = getattr(gen_out, 'decoder_hidden_states', None)
+        input_len = input_ids.shape[-1]
+        gen_token_ids = sequences[0, input_len:]
+        # IMPORTANT: downstream phrase token spans are computed from decoded answer text,
+        # which excludes special tokens (e.g. eos). Trim them here to keep alignment.
+        stop_ids = []
+        if self.tokenizer.eos_token_id is not None:
+            stop_ids.append(int(self.tokenizer.eos_token_id))
+        if pad_id is not None:
+            stop_ids.append(int(pad_id))
+        cut = gen_token_ids.shape[0]
+        if stop_ids:
+            stop_mask = torch.zeros_like(gen_token_ids, dtype=torch.bool)
+            for sid in stop_ids:
+                stop_mask |= (gen_token_ids == sid)
+            if stop_mask.any():
+                cut = int(torch.nonzero(stop_mask, as_tuple=False)[0].item())
+        gen_token_ids = gen_token_ids[:cut]
+        output_ids = gen_token_ids.detach().cpu()
+        output_text = self.tokenizer.decode(output_ids, skip_special_tokens=True)
+        gen_len_effective = int(output_ids.shape[0])
         grid = image_grid_thw
         qwen_h = int(grid[0, 1].item()) // self.merge_size
         qwen_w = int(grid[0, 2].item()) // self.merge_size
@@ -470,20 +485,82 @@ class FrozenQwenSAM(FrozenQwen):
         attentions: List[torch.Tensor] = []
         # import pdb; pdb.set_trace()
         # outputs.attentions shape is [num_layers, batch, num_heads, seq_len, seq_len]
-        for attn in outputs.attentions:
-            layer_attn = attn[0]
-            layer_image = layer_attn[..., images_seq_mask]
-            num_image_tokens = layer_image.shape[-1]
-            assert num_image_tokens == qwen_h * qwen_w
-            layer_image = layer_image.view(self.num_heads, layer_attn.shape[-2], qwen_h, qwen_w)
-            # attentions : list of [num_heads, generation_seq_len, H, W]
-            attentions.append(layer_image[:, generation_slice])
-        attention_maps = torch.stack(attentions)
-        hidden_states = outputs.hidden_states[-self.num_layers:]
-        hidden_states = torch.stack([hs[0] for hs in hidden_states])
-        weights = self.get_text_layer_weights().view(-1, 1, 1)
-        hidden_states = (hidden_states * weights).sum(0)
-        hidden_states = hidden_states[generation_slice]
+        # Prefer attentions returned by generate(); handle both per-step and full-matrix formats.
+        if gen_attentions is None:
+            raise RuntimeError('generate() did not return attentions; cannot run single-pass answer().')
+        # Common HF format for decoder-only generate():
+        #   gen_attentions[step][layer] -> [batch, heads, q_len(=1), k_len(past_len)]
+        is_per_step_attn = hasattr(gen_attentions, '__len__') and len(gen_attentions) > 0 and hasattr(gen_attentions[0], '__len__')
+        if is_per_step_attn:
+            num_steps = len(gen_attentions)
+            gen_len = sequences.shape[-1] - input_len
+            if gen_len != num_steps:
+                num_steps = min(gen_len, num_steps)
+            num_layers = len(gen_attentions[0])
+            for layer_id in range(num_layers):
+                step_maps = []
+                for step_id in range(num_steps):
+                    step_attn = gen_attentions[step_id][layer_id][0]  # [heads, q_len, k_len]
+                    k_len = step_attn.shape[-1]
+                    img_mask_step = images_seq_mask[:k_len]
+                    layer_image = step_attn[:, -1, img_mask_step]  # [heads, num_img_tokens]
+                    num_image_tokens = layer_image.shape[-1]
+                    assert num_image_tokens == qwen_h * qwen_w
+                    step_maps.append(layer_image.view(self.num_heads, qwen_h, qwen_w))
+                attentions.append(torch.stack(step_maps, dim=1))  # [heads, steps, H, W]
+            attention_maps = torch.stack(attentions)  # [layers, heads, steps, H, W]
+        else:
+            # Full-matrix per-layer format: gen_attentions[layer] -> [batch, heads, seq_len, seq_len]
+            for attn in gen_attentions:
+                layer_attn = attn[0]
+                layer_image = layer_attn[..., images_seq_mask]
+                num_image_tokens = layer_image.shape[-1]
+                assert num_image_tokens == qwen_h * qwen_w
+                layer_image = layer_image.view(self.num_heads, layer_attn.shape[-2], qwen_h, qwen_w)
+                attentions.append(layer_image[:, generation_slice])
+            attention_maps = torch.stack(attentions)
+
+        # Hidden states: single-pass from generate()
+        if gen_hidden_states is None:
+            raise RuntimeError('generate() did not return hidden_states; cannot run single-pass answer().')
+        weights = self.get_text_layer_weights().view(-1, 1)
+        is_per_step_hs = hasattr(gen_hidden_states, '__len__') and len(gen_hidden_states) > 0 and hasattr(gen_hidden_states[0], '__len__')
+        if is_per_step_hs:
+            num_steps = len(gen_hidden_states)
+            gen_len = sequences.shape[-1] - input_len
+            if gen_len != num_steps:
+                num_steps = min(gen_len, num_steps)
+            step_vecs = []
+            for step_id in range(num_steps):
+                step_layers = gen_hidden_states[step_id]
+                # step_layers may include embedding outputs; always take the last self.num_layers layers.
+                layer_tensors = step_layers[-self.num_layers:]
+                per_layer = []
+                for hs in layer_tensors:
+                    t = hs[0]  # drop batch dim -> [seq, dim] or [1, dim]
+                    if t.dim() == 2:
+                        per_layer.append(t[-1])
+                    elif t.dim() == 1:
+                        per_layer.append(t)
+                    else:
+                        raise RuntimeError(f'Unexpected hidden_state tensor shape: {tuple(t.shape)}')
+                layer_stack = torch.stack(per_layer, dim=0)  # [num_layers, dim]
+                step_vecs.append((layer_stack * weights).sum(0))  # [dim]
+            hidden_states = torch.stack(step_vecs, dim=0)  # [gen_len, dim]
+        else:
+            # Full sequence per-layer format: gen_hidden_states[layer] -> [batch, seq_len, dim]
+            hs_layers = gen_hidden_states[-self.num_layers:]
+            hs_stack = torch.stack([hs[0] for hs in hs_layers])  # [num_layers, seq_len, dim]
+            hs_weighted = (hs_stack * weights.view(-1, 1, 1)).sum(0)  # [seq_len, dim]
+            hidden_states = hs_weighted[generation_slice]  # [gen_len, dim]
+
+        # Final safety trim: keep shapes aligned with output_ids (answer-only, no special tokens).
+        if 'gen_len_effective' in locals():
+            if attention_maps.shape[2] != gen_len_effective:
+                attention_maps = attention_maps[:, :, :gen_len_effective]
+            if hidden_states.shape[0] != gen_len_effective:
+                hidden_states = hidden_states[:gen_len_effective]
+
         meta_data = self._build_meta_data(image, image_grid_thw)
         vision_tokens = self._last_vision_tokens
         grid_snapshot = image_grid_thw.detach().cpu()

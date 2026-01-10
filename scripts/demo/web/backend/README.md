@@ -50,6 +50,7 @@ fastapi dev scripts/demo/web/backend/main.py --host 0.0.0.0 --port 9000
 Important: `FLMM_WEB_RESULTS_DIR` (and optionally `FLMM_WEB_TASK_DB`) must match the backend, otherwise the worker will read a different SQLite file.
 
 ```bash
+export HF_HUB_OFFLINE=1
 export FLMM_WEB_RESULTS_DIR=./results
 # optional: export FLMM_WEB_TASK_DB=./results/task_queue.db
 # optional: export CUDA_VISIBLE_DEVICES=0 FLMM_WEB_DEVICE=cuda:0 FLMM_WEB_DEVICE_MAP=  # single-GPU, avoid auto split

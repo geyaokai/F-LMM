@@ -72,22 +72,28 @@ def enqueue_task(
     if task_type not in TASK_TYPES:
         raise ValueError(f"Invalid task type: {task_type}")
     payload = _serialize(input_obj)
-    cur = conn.execute(
-        """
-        INSERT INTO tasks (type, status, session_id, turn_idx, turn_uid, input_json)
-        VALUES (?, 'PENDING', ?, ?, ?, ?)
-        ON CONFLICT(session_id, turn_idx)
-        DO UPDATE SET
-            type=excluded.type,
-            status='PENDING',
-            turn_uid=excluded.turn_uid,
-            input_json=excluded.input_json,
-            output_json=NULL,
-            error=NULL,
-            worker_id=NULL
-        """,
-        (task_type, session_id, turn_idx, turn_uid, payload),
-    )
+    if task_type == "ASK":
+        # Ensure only one ASK per turn: remove any existing then insert fresh
+        conn.execute(
+            "DELETE FROM tasks WHERE session_id = ? AND turn_idx = ? AND type = 'ASK'",
+            (session_id, turn_idx),
+        )
+        cur = conn.execute(
+            """
+            INSERT INTO tasks (type, status, session_id, turn_idx, turn_uid, input_json)
+            VALUES (?, 'PENDING', ?, ?, ?, ?)
+            """,
+            (task_type, session_id, turn_idx, turn_uid, payload),
+        )
+    else:
+        # GROUND / ATTN_* allow multiple per turn; no upsert
+        cur = conn.execute(
+            """
+            INSERT INTO tasks (type, status, session_id, turn_idx, turn_uid, input_json)
+            VALUES (?, 'PENDING', ?, ?, ?, ?)
+            """,
+            (task_type, session_id, turn_idx, turn_uid, payload),
+        )
     conn.commit()
     return int(cur.lastrowid)
 

@@ -6,6 +6,7 @@ PRAGMA synchronous=NORMAL;
 
 -- Ensure we recreate the unique index if the definition changes
 DROP INDEX IF EXISTS idx_tasks_turn_unique;
+DROP INDEX IF EXISTS idx_tasks_ask_turn_unique;
 
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,7 +25,10 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status_created ON tasks (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_turn_unique ON tasks (session_id, turn_idx);
+-- Only ASK should be unique per turn; other types may have multiple entries per turn
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_ask_turn_unique
+ON tasks (session_id, turn_idx)
+WHERE type = 'ASK';
 
 CREATE TRIGGER IF NOT EXISTS trg_tasks_updated_at
 AFTER UPDATE ON tasks
