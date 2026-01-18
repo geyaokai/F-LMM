@@ -25,6 +25,12 @@ from scripts.demo.interact import (  # noqa: E402
     load_model,
     pipeline_default_ask,
 )
+from scripts.demo.attention_i2t import (  # noqa: E402
+    build_i2t_heatmap,
+    parse_token_span,
+    render_overlay,
+    token_text_from_ids,
+)
 from scripts.demo.web.backend.prompt_overrides import apply_prompt_overrides  # noqa: E402
 from scripts.demo.web.backend.task_queue.paths import write_json  # noqa: E402
 from .db import connect, init_db
@@ -291,10 +297,61 @@ class WorkerRuntime:
         session = self._session(task["session_id"])
         turn_hint = payload.get("turn_idx") or task.get("turn_idx") or history_turns(session)
         session.turn_idx = int(turn_hint)
+        if kind != "i2t":
+            raise ValueError("Only ATTN_I2T is supported for now.")
         attn_id = session.attn_counters.get(kind, 0)
         session.attn_counters[kind] = attn_id + 1
         attn_dir = session.session_paths.attn_dir(session.turn_idx, kind, attn_id)
         attn_dir.mkdir(parents=True, exist_ok=True)
+        image_path = payload.get("image_path")
+        if image_path:
+            handle_load(session, image_path)
+        if session.current_image is None:
+            raise ValueError("ATTN_I2T requires image_path or a previously loaded image.")
+        token_span_input = payload.get("token_span")
+        if token_span_input is None:
+            raise ValueError("ATTN_I2T requires token_span.")
+        prompt = payload.get("prompt") or payload.get("question")
+        if session.last_answer is None:
+            if not prompt:
+                raise ValueError("ATTN_I2T requires prompt when no cached answer exists.")
+            session.last_answer = session.model.answer(
+                image=session.current_image,
+                question=prompt,
+                history=session.history,
+                max_new_tokens=session.args.max_new_tokens,
+            )
+        answer_cache = session.last_answer
+        attention_maps = answer_cache.get("attention_maps")
+        if attention_maps is None:
+            raise ValueError("answer cache has no attention_maps.")
+        layer = payload.get("layer", "mean")
+        head = payload.get("head", "mean")
+        reduction = payload.get("reduction", "mean")
+        heatmap, meta = build_i2t_heatmap(
+            attention_maps=attention_maps,
+            token_span=token_span_input,
+            layer=layer,
+            head=head,
+            reduction=reduction,
+        )
+        start, end = parse_token_span(token_span_input)
+        token_text = token_text_from_ids(
+            session.model.tokenizer,
+            answer_cache.get("output_ids"),
+            start,
+            end,
+        )
+        if token_text:
+            meta["token_text"] = token_text
+
+        overlay_img, heatmap_img = render_overlay(session.current_image, heatmap)
+        overlay_path = attn_dir / "overlay.png"
+        heatmap_path = attn_dir / "heatmap.png"
+        overlay_img.save(overlay_path)
+        heatmap_img.save(heatmap_path)
+        write_json(attn_dir / "meta.json", meta)
+
         config = {
             "task_id": task["id"],
             "session_id": session.session_id,
@@ -302,17 +359,17 @@ class WorkerRuntime:
             "attn_id": attn_id,
             "type": task["type"],
             "input": payload,
-            "note": "placeholder attention artifact; plug in real tensor export later",
+            "meta": meta,
         }
         write_json(attn_dir / "config.json", config)
-        # placeholder artifact
-        (attn_dir / "attn.npz").write_bytes(b"")
         return {
             "type": task["type"],
             "turn_idx": session.turn_idx,
             "attn_id": attn_id,
             "attn_dir": self._rel(attn_dir),
-            "config": "config.json",
+            "overlay_png_url": self._rel(overlay_path),
+            "heatmap_png_url": self._rel(heatmap_path),
+            "meta": meta,
         }
 
     def handle_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
