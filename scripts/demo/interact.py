@@ -274,6 +274,9 @@ def load_model(cfg, args):
         additional_prompt=append_prompt,
         max_history_turns=args.max_history_turns,
     )
+    model.phrase_extract_prompt = getattr(args, "phrase_extract_prompt", None)
+    model.phrase_rerank_prompt = getattr(args, "phrase_rerank_prompt", None)
+    model.roi_extra_prompt = getattr(args, "roi_extra_prompt", None)
     return model
 
 
@@ -365,19 +368,34 @@ def _rerank_phrases_with_model(model, answer_text: str,
     if not candidates:
         return []
     numbered = [f"{i}. {p[0]}" for i, p in enumerate(candidates)]
-    prompt = (
-        f"<|im_start|>system\n"
-        "Given an answer text and its candidate noun phrases, pick the most relevant phrases (keep original text exactly). "
-        f"Return JSON only: {{\"phrases\": [\"phrase_a\", ...]}} with at most {limit} items.\n"
-        "Do not invent new phrases.\n"
-        "<|im_end|>\n"
-        "<|im_start|>user\n"
-        f"Answer:\n{answer_text}\n"
-        "Candidates:\n" + "\n".join(numbered) + "\n"
-        f"Select up to {limit}.\n"
-        "<|im_end|>\n"
-        "<|im_start|>assistant\n"
-    )
+    override = getattr(model, "phrase_rerank_prompt", None)
+    if override:
+        try:
+            prompt = override.format(
+                answer=answer_text,
+                candidates="\n".join(numbered),
+                limit=limit,
+            )
+        except Exception:
+            prompt = (
+                f"{override}\n\nAnswer:\n{answer_text}\nCandidates:\n"
+                + "\n".join(numbered)
+                + f"\nSelect up to {limit}.\n"
+            )
+    else:
+        prompt = (
+            f"<|im_start|>system\n"
+            "Given an answer text and its candidate noun phrases, pick the most relevant phrases (keep original text exactly). "
+            f"Return JSON only: {{\"phrases\": [\"phrase_a\", ...]}} with at most {limit} items.\n"
+            "Do not invent new phrases.\n"
+            "<|im_end|>\n"
+            "<|im_start|>user\n"
+            f"Answer:\n{answer_text}\n"
+            "Candidates:\n" + "\n".join(numbered) + "\n"
+            f"Select up to {limit}.\n"
+            "<|im_end|>\n"
+            "<|im_start|>assistant\n"
+        )
     encoded = model.tokenizer(prompt, return_tensors='pt', add_special_tokens=False)
     input_ids = encoded['input_ids'].to(model.qwen_device)
     attention_mask = encoded.get('attention_mask')
@@ -419,18 +437,25 @@ def extract_phrases_via_model(model, answer_text: str, max_tokens: int, limit: i
     spacy_candidates = _extract_phrases_spacy(answer_text, limit=limit * 3)
     if spacy_candidates:
         return _rerank_phrases_with_model(model, answer_text, spacy_candidates, max_tokens, limit)
-    prompt = (
-        "<|im_start|>system\n"
-        "You extract distinct noun phrases from the assistant answer. "
-        "Return pure JSON like {\"phrases\": [\"phrase a\", ...]}.\n"
-        "<|im_end|>\n"
-        "<|im_start|>user\n"
-        "Answer:\n"
-        f"{answer_text}\n"
-        "List concise noun phrases that appear in the answer. JSON only.\n"
-        "<|im_end|>\n"
-        "<|im_start|>assistant\n"
-    )
+    override = getattr(model, "phrase_extract_prompt", None)
+    if override:
+        try:
+            prompt = override.format(answer=answer_text)
+        except Exception:
+            prompt = f"{override}\n\nAnswer:\n{answer_text}\n"
+    else:
+        prompt = (
+            "<|im_start|>system\n"
+            "You extract distinct noun phrases from the assistant answer. "
+            "Return pure JSON like {\"phrases\": [\"phrase a\", ...]}.\n"
+            "<|im_end|>\n"
+            "<|im_start|>user\n"
+            "Answer:\n"
+            f"{answer_text}\n"
+            "List concise noun phrases that appear in the answer. JSON only.\n"
+            "<|im_end|>\n"
+            "<|im_start|>assistant\n"
+        )
     encoded = model.tokenizer(
         prompt, return_tensors='pt', add_special_tokens=False)
     input_ids = encoded['input_ids'].to(model.qwen_device)
@@ -739,7 +764,8 @@ def pipeline_default_ask(session: SessionState,
                          question: str,
                          reset_history: bool = False,
                          auto_topk: int = 1,
-                         turn_idx: Optional[int] = None) -> Dict[str, Any]:
+                         turn_idx: Optional[int] = None,
+                         enable_roi: bool = True) -> Dict[str, Any]:
     """Unified pipeline: answer -> auto ground -> ROI re-answer (DeepSeek-style)."""
     ensure_image(session)
     if reset_history:
@@ -776,16 +802,18 @@ def pipeline_default_ask(session: SessionState,
         records = perform_ground(session, indices)
         bbox = _first_bbox_record(records)
         verification.update({
-            "used": bool(records),
+            "used": bool(records) if enable_roi else False,
         })
-        if bbox:
+        if enable_roi and bbox:
             try:
                 roi_result = session.model.visual_cot_resample(
                     image=session.current_image,
                     question=question,
                     bbox=bbox,
                     answer_cache=session.last_answer,
-                    max_new_tokens=session.args.max_new_tokens)
+                    max_new_tokens=session.args.max_new_tokens,
+                    extra_prompt=getattr(session.model, "roi_extra_prompt", ""),
+                )
                 roi_answer = roi_result.get("answer_text", "")
                 if roi_answer:
                     final_answer = roi_answer
@@ -800,6 +828,7 @@ def pipeline_default_ask(session: SessionState,
     session.last_answer["output_text"] = final_answer
     return {
         "answer": final_answer,
+        "raw_answer": answer_text,
         "original_answer": answer_text,
         "roi_answer": verification.get("roi_answer"),
         "roi_bbox": verification.get("roi_bbox"),

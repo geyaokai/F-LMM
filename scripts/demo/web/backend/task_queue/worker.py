@@ -25,6 +25,7 @@ from scripts.demo.interact import (  # noqa: E402
     load_model,
     pipeline_default_ask,
 )
+from scripts.demo.web.backend.prompt_overrides import apply_prompt_overrides  # noqa: E402
 from scripts.demo.web.backend.task_queue.paths import write_json  # noqa: E402
 from .db import connect, init_db
 from .queue import claim_next_task, mark_done, mark_failed
@@ -86,6 +87,7 @@ def build_args_from_env(cli_parse_args):
     )
     args.inspect_prompt = os.getenv("FLMM_WEB_INSPECT_PROMPT", args.inspect_prompt)
     args.extra_prompt = os.getenv("FLMM_WEB_EXTRA_PROMPT", args.extra_prompt or "")
+    args.prompt_file = os.getenv("FLMM_WEB_PROMPT_FILE")
     args.no_sam = env_bool("FLMM_WEB_NO_SAM", args.no_sam)
     args.image = None
     return args
@@ -104,6 +106,7 @@ class WorkerRuntime:
         LOGGER.info("Loading config: %s", cfg_path)
         self.cfg = Config.fromfile(cfg_path)
         LOGGER.info("Loading model for worker...")
+        apply_prompt_overrides(self.cfg, self.args, self.args.prompt_file)
         self.model = load_model(self.cfg, self.args)
         self.results_dir = Path(self.args.results_dir).expanduser().resolve()
         self.results_dir.mkdir(parents=True, exist_ok=True)
@@ -155,19 +158,57 @@ class WorkerRuntime:
             )
         return payload
 
-    def _serialize_ground(self, session: SessionState) -> Dict[str, Any]:
+    def _normalize_bbox(self, bbox: Any) -> Optional[List[float]]:
+        if not bbox:
+            return None
+        try:
+            x1, y1, x2, y2 = [float(v) for v in bbox]
+        except Exception:
+            return None
+        # Heuristic: if bbox appears to be (x, y, w, h) with w/h smaller than x/y,
+        # convert to (x1, y1, x2, y2).
+        if x2 < x1 or y2 < y1:
+            x2 = x1 + max(0.0, x2)
+            y2 = y1 + max(0.0, y2)
+        return [x1, y1, x2, y2]
+
+    def _align_char_span(self, answer: str, phrase: str, span: Any) -> List[int]:
+        try:
+            start, end = span
+        except Exception:
+            start, end = 0, 0
+        if not answer or not phrase:
+            return [int(start), int(end)]
+        snippet = answer[start:end]
+        if snippet and phrase.lower() in snippet.lower():
+            return [int(start), int(end)]
+        lower_answer = answer.lower()
+        lower_phrase = phrase.lower()
+        idx = lower_answer.find(lower_phrase)
+        if idx != -1:
+            return [int(idx), int(idx + len(phrase))]
+        return [int(start), int(end)]
+
+    def _serialize_ground(
+        self,
+        session: SessionState,
+        answer_text: Optional[str] = None,
+        text_source: str = "answer",
+    ) -> Dict[str, Any]:
         records = []
+        answer_text = answer_text or ""
         for idx, record in enumerate(session.last_records):
+            phrase = record.phrase_text or ""
             records.append(
                 {
                     "index": idx,
-                    "phrase": record.phrase_text,
+                    "phrase": phrase,
                     "overlay_path": self._rel(record.overlay_path),
                     "mask_path": self._rel(record.mask_path),
                     "roi_path": self._rel(record.roi_path),
-                    "char_span": record.char_span,
+                    "char_span": self._align_char_span(answer_text, phrase, record.char_span),
                     "token_span": record.token_span,
-                    "bbox": record.bbox,
+                    "bbox": self._normalize_bbox(record.bbox),
                 }
             )
         ground_idx = max(session.ground_id - 1, 0)
@@ -177,6 +218,7 @@ class WorkerRuntime:
             "records": records,
             "turn_dir": self._rel(turn_dir),
             "ground_dir": self._rel(ground_dir),
+            "text_source": text_source,
         }
 
     def handle_ask(self, task: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -193,23 +235,33 @@ class WorkerRuntime:
             raise ValueError("ASK requires image_path or a previously loaded image.")
         auto_topk = int(payload.get("auto_topk", 1))
         reset_history = bool(payload.get("reset_history", False))
+        enable_roi = payload.get("enable_roi", True)
+        if isinstance(enable_roi, str):
+            enable_roi = enable_roi.strip().lower() not in ("0", "false", "no", "off")
+        else:
+            enable_roi = bool(enable_roi)
         result = pipeline_default_ask(
             session,
             question,
             reset_history=reset_history,
             auto_topk=auto_topk,
             turn_idx=session.turn_idx,
+            enable_roi=enable_roi,
         )
+        raw_answer = result.get("original_answer") or result.get("raw_answer") or result.get("answer") or ""
+        final_answer = result.get("answer") or raw_answer
         return {
             "type": "ASK",
             "turn_idx": session.turn_idx,
             "history": [{"role": m["role"], "text": m["text"]} for m in session.history],
             "history_turns": history_turns(session),
-            "answer": result.get("answer"),
+            "raw_answer": raw_answer,
+            "answer": final_answer,
+            "roi_answer": result.get("roi_answer"),
             "phrases": self._serialize_phrases(session),
-            "verification": self._serialize_ground(session),
+            "verification": self._serialize_ground(session, answer_text=raw_answer, text_source="raw_answer"),
             # backward-compatible alias
-            "ground": self._serialize_ground(session),
+            "ground": self._serialize_ground(session, answer_text=raw_answer, text_source="raw_answer"),
         }
 
     def handle_ground(self, task: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:

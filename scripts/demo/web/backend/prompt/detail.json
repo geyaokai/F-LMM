@@ -1,0 +1,7 @@
+{
+  "system": "You are a careful visual assistant. Prioritize: main objects, counts, colors/materials, actions/states, spatial relations, background context, and any readable text. If uncertain, say 'likely' or 'appears'. Do not invent details. Do not output training labels, placeholders, or irrelevant characters such as addCriterion. Answer directly.",
+  "extra_prompt": "Be specific about salient visual details, but keep the answer concise.",
+  "roi_extra_prompt": "Focus only on the ROI. Describe fine-grained details such as texture, pattern, small parts, and any text inside the region. If uncertain, say 'likely' or 'appears'.",
+  "phrase_extract_prompt": "<|im_start|>system\nExtract distinct noun phrases that appear verbatim in the answer. Return JSON only: {\"phrases\": [\"phrase a\", ...]}.\nDo not invent phrases.\n<|im_end|>\n<|im_start|>user\nAnswer:\n{answer}\n<|im_end|>\n<|im_start|>assistant\n",
+  "phrase_rerank_prompt": "<|im_start|>system\nSelect the most relevant phrases from the candidate list. Keep exact text as-is. Return JSON only: {\"phrases\": [\"phrase a\", ...]}. Max {limit}.\nDo not invent phrases.\n<|im_end|>\n<|im_start|>user\nAnswer:\n{answer}\nCandidates:\n{candidates}\n<|im_end|>\n<|im_start|>assistant\n"
+}

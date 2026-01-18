@@ -43,6 +43,7 @@ from scripts.demo.interact import (  # noqa: E402
 from scripts.demo.web.backend.task_queue.db import connect as tq_connect, init_db as tq_init_db  # noqa: E402
 from scripts.demo.web.backend.task_queue.queue import enqueue_task, get_task  # noqa: E402
 from scripts.demo.web.backend.task_queue.paths import SessionPaths  # noqa: E402
+from scripts.demo.web.backend.prompt_overrides import apply_prompt_overrides  # noqa: E402
 
 APP_VERSION = "0.1.0"
 LOGGER = logging.getLogger("flmm.web")
@@ -93,6 +94,18 @@ class LoadImageRequest(SessionIdentRequest):
 
 
 class AskRequest(SessionIdentRequest):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "session_id": "session_abc123",
+                    "question": "What is in the image?",
+                    "enable_roi": False,
+                }
+            ]
+        },
+    )
     mode: Literal["default"] = Field(
         "default", description="Ask mode (default only)."
     )
@@ -102,6 +115,9 @@ class AskRequest(SessionIdentRequest):
     )
     reset_history: bool = Field(
         False, description="Clear history before asking (default-only)."
+    )
+    enable_roi: bool = Field(
+        True, description="Enable ROI re-answer (visual_cot_resample)."
     )
 
     @model_validator(mode="after")
@@ -124,12 +140,185 @@ class SessionResetRequest(SessionIdentRequest):
 
 
 class TaskEnqueueRequest(APIModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "type": "ASK",
+                    "session_id": "session_abc123",
+                    "payload": {
+                        "question": "What is in the image?",
+                        "image_path": "results/sessions/session_abc123/images/upload.png",
+                        "enable_roi": False,
+                    },
+                }
+            ]
+        },
+    )
     type: Literal['ASK', 'GROUND', 'ATTN_I2T', 'ATTN_T2I'] = Field(..., description='Task type')
     session_id: str = Field(..., description='Session identifier')
     payload: Dict[str, Any] = Field(default_factory=dict, description='Task input payload')
     turn_idx: Optional[int] = Field(None, description='Optional turn index for dedupe')
     turn_uid: Optional[str] = Field(None, description='Optional turn UID')
 
+
+# --- Response Models ---
+
+TaskType = Literal["ASK", "GROUND", "ATTN_I2T", "ATTN_T2I"]
+TaskStatus = Literal["PENDING", "RUNNING", "DONE", "FAILED"]
+
+
+class HistoryItem(BaseModel):
+    role: str = Field(..., description="Message role (user/assistant/system).")
+    text: str = Field(..., description="Message text.")
+
+
+class ImageInfo(BaseModel):
+    name: Optional[str] = Field(None, description="Image filename if available.")
+    path: Optional[str] = Field(None, description="Local path for the image.")
+    width: int = Field(..., description="Image width in pixels.")
+    height: int = Field(..., description="Image height in pixels.")
+    url: Optional[str] = Field(None, description="Public URL for the image.")
+
+
+class SessionPayload(BaseModel):
+    session_id: str = Field(..., description="Session identifier.")
+    session_dir: str = Field(..., description="Relative session directory.")
+    session_dir_url: str = Field(..., description="Public URL for the session directory.")
+    history: List[HistoryItem] = Field(default_factory=list, description="Conversation history.")
+    history_turns: int = Field(..., description="Number of turns in history.")
+    image: Optional[ImageInfo] = Field(None, description="Current image info.")
+    created_at: str = Field(..., description="Session creation time (ISO-8601).")
+    last_active: str = Field(..., description="Last active time (ISO-8601).")
+
+
+class PhrasePayload(BaseModel):
+    index: int = Field(..., description="Phrase index.")
+    text: str = Field(..., description="Phrase text.")
+    char_span: List[int] = Field(default_factory=list, description="Character span of the phrase.")
+    token_span: List[int] = Field(default_factory=list, description="Token span of the phrase.")
+
+
+class GroundRecord(BaseModel):
+    index: int = Field(..., description="Record index.")
+    phrase: str = Field(..., description="Phrase text.")
+    overlay_url: Optional[str] = Field(None, description="Overlay visualization URL.")
+    mask_url: Optional[str] = Field(None, description="Mask visualization URL.")
+    roi_url: Optional[str] = Field(None, description="ROI image URL.")
+    char_span: List[int] = Field(default_factory=list, description="Character span of the phrase.")
+    token_span: List[int] = Field(default_factory=list, description="Token span of the phrase.")
+    bbox: List[float] = Field(default_factory=list, description="Bounding box [x1,y1,x2,y2].")
+
+
+class GroundPayload(BaseModel):
+    records: List[GroundRecord] = Field(default_factory=list, description="Grounding records.")
+    turn_dir: str = Field(..., description="Relative turn directory.")
+    turn_url: str = Field(..., description="Public URL for the turn directory.")
+    ground_dir: str = Field(..., description="Relative grounding directory.")
+    ground_url: str = Field(..., description="Public URL for the grounding directory.")
+    round_dir: str = Field(..., description="Backward-compatible alias for ground_dir.")
+    round_url: str = Field(..., description="Backward-compatible alias for ground_url.")
+    history: List[HistoryItem] = Field(default_factory=list, description="Updated history.")
+
+
+class VerificationPayload(BaseModel):
+    original_answer: Optional[str] = Field(None, description="Answer before ROI verification.")
+    used: Optional[bool] = Field(None, description="Whether ROI verification was used.")
+    roi_answer: Optional[str] = Field(None, description="Answer after ROI verification.")
+    roi_bbox: Optional[List[float]] = Field(None, description="ROI bounding box.")
+    roi_prompt: Optional[str] = Field(None, description="Prompt used for ROI re-answering.")
+    roi_prompt_raw: Optional[str] = Field(None, description="Unprocessed ROI prompt.")
+    error: Optional[str] = Field(None, description="Verification error if any.")
+    records: Optional[List[GroundRecord]] = Field(None, description="Grounding records used.")
+    turn_dir: Optional[str] = Field(None, description="Relative turn directory.")
+    turn_url: Optional[str] = Field(None, description="Public URL for the turn directory.")
+    ground_dir: Optional[str] = Field(None, description="Relative grounding directory.")
+    ground_url: Optional[str] = Field(None, description="Public URL for the grounding directory.")
+    round_dir: Optional[str] = Field(None, description="Backward-compatible alias for ground_dir.")
+    round_url: Optional[str] = Field(None, description="Backward-compatible alias for ground_url.")
+
+    model_config = ConfigDict(extra="allow")
+
+
+class AskPayload(BaseModel):
+    mode: str = Field(..., description="Ask mode.")
+    raw_answer: Optional[str] = Field(None, description="Answer before ROI re-answer.")
+    answer: str = Field(..., description="Final answer.")
+    phrases: List[PhrasePayload] = Field(default_factory=list, description="Extracted phrases.")
+    verification: Optional[VerificationPayload] = Field(None, description="Verification details.")
+    history: List[HistoryItem] = Field(default_factory=list, description="Updated history.")
+    history_turns: int = Field(..., description="Number of turns in history.")
+
+
+class ClearPayload(BaseModel):
+    history: List[HistoryItem] = Field(default_factory=list, description="Cleared history.")
+    history_turns: int = Field(..., description="History turn count after clear.")
+
+
+class HealthPayload(BaseModel):
+    version: str = Field(..., description="Backend version.")
+    sessions: int = Field(..., description="Active session count.")
+
+
+class TaskRecord(BaseModel):
+    id: int = Field(..., description="Task identifier.")
+    type: TaskType = Field(..., description="Task type.")
+    status: TaskStatus = Field(..., description="Task status.")
+    session_id: str = Field(..., description="Session identifier.")
+    turn_idx: Optional[int] = Field(None, description="Associated turn index.")
+    turn_uid: Optional[str] = Field(None, description="Associated turn UID.")
+    input_json: Optional[Any] = Field(None, description="Task input payload.")
+    output_json: Optional[Any] = Field(None, description="Task output payload.")
+    error: Optional[str] = Field(None, description="Error message if failed.")
+    worker_id: Optional[str] = Field(None, description="Worker handling the task.")
+    created_at: str = Field(..., description="Creation timestamp (ISO-8601).")
+    updated_at: str = Field(..., description="Last update timestamp (ISO-8601).")
+
+
+class TaskEnqueuePayload(BaseModel):
+    task_id: int = Field(..., description="Enqueued task ID.")
+
+
+class TaskPollPayload(BaseModel):
+    task: TaskRecord = Field(..., description="Task record.")
+
+
+class ResponseBase(BaseModel):
+    status: Literal["ok", "error"] = Field("ok", description="Request status.")
+    message: str = Field("", description="Human-readable message.")
+
+
+class HealthResponse(ResponseBase):
+    data: HealthPayload = Field(..., description="Health payload.")
+
+
+class SessionResponse(ResponseBase):
+    data: SessionPayload = Field(..., description="Session payload.")
+
+
+class AskResponse(ResponseBase):
+    data: AskPayload = Field(..., description="Ask payload.")
+
+
+class GroundResponse(ResponseBase):
+    data: GroundPayload = Field(..., description="Grounding payload.")
+
+
+class ClearResponse(ResponseBase):
+    data: ClearPayload = Field(..., description="Clear payload.")
+
+
+class TaskEnqueueResponse(ResponseBase):
+    data: TaskEnqueuePayload = Field(..., description="Task enqueue payload.")
+
+
+class TaskPollResponse(ResponseBase):
+    data: TaskPollPayload = Field(..., description="Task polling payload.")
+
+
+class DeleteSessionResponse(ResponseBase):
+    data: Dict[str, Any] = Field(default_factory=dict, description="Empty payload.")
 
 @dataclass
 class SessionEntry:
@@ -362,6 +551,7 @@ def build_args_from_env() -> argparse.Namespace:
     )
     args.inspect_prompt = os.getenv("FLMM_WEB_INSPECT_PROMPT", args.inspect_prompt)
     args.extra_prompt = os.getenv("FLMM_WEB_EXTRA_PROMPT", args.extra_prompt or "")
+    args.prompt_file = os.getenv("FLMM_WEB_PROMPT_FILE")
     args.no_sam = env_bool("FLMM_WEB_NO_SAM", args.no_sam)
     args.image = None
     args.no_model = env_bool("FLMM_WEB_NO_MODEL", False)
@@ -390,7 +580,7 @@ class BackendState:
             LOGGER.info("Loading model...")
             if args.checkpoint:
                 LOGGER.info("Checkpoint override resolved path: %s (exists=%s)", args.checkpoint, Path(args.checkpoint).exists())
-            
+            apply_prompt_overrides(cfg, args, args.prompt_file)
             # Load the model using the provided config and args
             model = load_model(cfg, args)
         self.args = args
@@ -454,6 +644,180 @@ def error_response(message: str, status_code: int = 400):
         status_code=status_code,
         content=build_response(status="error", message=message),
     )
+
+
+EXAMPLE_SESSION_ID = "8b2f3c8a-3a35-4c5a-9d71-2c8a3b0f1234"
+EXAMPLE_SESSION_DIR = f"sessions/{EXAMPLE_SESSION_ID}"
+EXAMPLE_SESSION_URL = f"/results/{EXAMPLE_SESSION_DIR}"
+EXAMPLE_IMAGE_PATH = f"{EXAMPLE_SESSION_DIR}/images/upload_1705400000000.png"
+EXAMPLE_IMAGE_URL = f"/results/{EXAMPLE_IMAGE_PATH}"
+EXAMPLE_TURN_DIR = f"{EXAMPLE_SESSION_DIR}/turns/turn_0000"
+EXAMPLE_TURN_URL = f"/results/{EXAMPLE_TURN_DIR}"
+EXAMPLE_GROUND_DIR = f"{EXAMPLE_TURN_DIR}/ground/ground_0000"
+EXAMPLE_GROUND_URL = f"/results/{EXAMPLE_GROUND_DIR}"
+
+EXAMPLE_HISTORY = [
+    {"role": "user", "text": "What is in the image?"},
+    {"role": "assistant", "text": "A red car is parked in a lot."},
+]
+
+EXAMPLE_SESSION_PAYLOAD = {
+    "session_id": EXAMPLE_SESSION_ID,
+    "session_dir": EXAMPLE_SESSION_DIR,
+    "session_dir_url": EXAMPLE_SESSION_URL,
+    "history": EXAMPLE_HISTORY,
+    "history_turns": 1,
+    "image": {
+        "name": "upload_1705400000000.png",
+        "path": EXAMPLE_IMAGE_PATH,
+        "width": 1024,
+        "height": 768,
+        "url": EXAMPLE_IMAGE_URL,
+    },
+    "created_at": "2026-01-16T12:34:56.000Z",
+    "last_active": "2026-01-16T12:35:10.000Z",
+}
+
+EXAMPLE_PHRASES = [
+    {"index": 0, "text": "red car", "char_span": [2, 9], "token_span": [1, 2]},
+    {"index": 1, "text": "parking lot", "char_span": [22, 33], "token_span": [5, 6]},
+]
+
+EXAMPLE_GROUND_RECORDS = [
+    {
+        "index": 0,
+        "phrase": "red car",
+        "overlay_url": f"{EXAMPLE_GROUND_URL}/overlay_0000.png",
+        "mask_url": f"{EXAMPLE_GROUND_URL}/mask_0000.png",
+        "roi_url": f"{EXAMPLE_GROUND_URL}/roi_0000.png",
+        "char_span": [2, 9],
+        "token_span": [1, 2],
+        "bbox": [120, 80, 460, 320],
+    }
+]
+
+EXAMPLE_GROUND_PAYLOAD = {
+    "records": EXAMPLE_GROUND_RECORDS,
+    "turn_dir": EXAMPLE_TURN_DIR,
+    "turn_url": EXAMPLE_TURN_URL,
+    "ground_dir": EXAMPLE_GROUND_DIR,
+    "ground_url": EXAMPLE_GROUND_URL,
+    "round_dir": EXAMPLE_GROUND_DIR,
+    "round_url": EXAMPLE_GROUND_URL,
+}
+
+EXAMPLE_VERIFICATION = {
+    "original_answer": "A red car is parked in a lot.",
+    "used": True,
+    "roi_answer": "The car is red.",
+    "roi_bbox": [120, 80, 460, 320],
+    "roi_prompt": "Focus on the car and answer the question.",
+    "roi_prompt_raw": "Focus on the car and answer the question.",
+    **EXAMPLE_GROUND_PAYLOAD,
+}
+
+EXAMPLE_ASK_PAYLOAD = {
+    "mode": "default",
+    "raw_answer": "A red car is parked in a lot.",
+    "answer": "The car is red.",
+    "phrases": EXAMPLE_PHRASES,
+    "verification": EXAMPLE_VERIFICATION,
+    "history": EXAMPLE_HISTORY,
+    "history_turns": 1,
+}
+
+EXAMPLE_TASK = {
+    "id": 42,
+    "type": "ASK",
+    "status": "DONE",
+    "session_id": EXAMPLE_SESSION_ID,
+    "turn_idx": 0,
+    "turn_uid": "turn_0000",
+    "input_json": {"question": "What is in the image?", "image_path": EXAMPLE_IMAGE_PATH},
+    "output_json": {
+        "raw_answer": "A red car is parked in a lot.",
+        "answer": "The car is red.",
+        "roi_answer": "The car is red.",
+    },
+    "error": None,
+    "worker_id": "worker-1",
+    "created_at": "2026-01-16T12:34:56.000Z",
+    "updated_at": "2026-01-16T12:34:58.000Z",
+}
+
+EXAMPLE_HEALTH_RESPONSE = build_response(
+    data={"version": APP_VERSION, "sessions": 3}
+)
+EXAMPLE_SESSION_RESPONSE = build_response(data=EXAMPLE_SESSION_PAYLOAD)
+EXAMPLE_SESSION_RESET_RESPONSE = build_response(
+    data=EXAMPLE_SESSION_PAYLOAD, message="Session reset."
+)
+EXAMPLE_SESSION_DELETE_RESPONSE = build_response(message="Session deleted.")
+EXAMPLE_LOAD_IMAGE_RESPONSE = build_response(
+    data=EXAMPLE_SESSION_PAYLOAD, message="Image loaded."
+)
+EXAMPLE_ASK_RESPONSE = build_response(data=EXAMPLE_ASK_PAYLOAD)
+EXAMPLE_GROUND_RESPONSE = build_response(
+    data={**EXAMPLE_GROUND_PAYLOAD, "history": EXAMPLE_HISTORY}
+)
+EXAMPLE_TASK_ENQUEUE_RESPONSE = build_response(data={"task_id": 42})
+EXAMPLE_TASK_POLL_RESPONSE = build_response(data={"task": EXAMPLE_TASK})
+EXAMPLE_CLEAR_RESPONSE = build_response(
+    data={"history": [], "history_turns": 0}
+)
+EXAMPLE_ERROR_RESPONSE = build_response(
+    status="error", message="Session 'missing-session-id' not found."
+)
+EXAMPLE_MODEL_DISABLED_ASK_RESPONSE = build_response(
+    status="error",
+    message="Model disabled (FLMM_WEB_NO_MODEL=1). Please enqueue ASK via /tasks.",
+)
+EXAMPLE_MODEL_DISABLED_GROUND_RESPONSE = build_response(
+    status="error",
+    message="Model disabled (FLMM_WEB_NO_MODEL=1). Please enqueue GROUND via /tasks.",
+)
+
+RESPONSES_HEALTH = {
+    200: {"content": {"application/json": {"example": EXAMPLE_HEALTH_RESPONSE}}},
+}
+RESPONSES_SESSION_CREATE = {
+    200: {"content": {"application/json": {"example": EXAMPLE_SESSION_RESPONSE}}},
+    400: {"content": {"application/json": {"example": EXAMPLE_ERROR_RESPONSE}}},
+}
+RESPONSES_SESSION_RESET = {
+    200: {"content": {"application/json": {"example": EXAMPLE_SESSION_RESET_RESPONSE}}},
+    400: {"content": {"application/json": {"example": EXAMPLE_ERROR_RESPONSE}}},
+}
+RESPONSES_SESSION_DELETE = {
+    200: {"content": {"application/json": {"example": EXAMPLE_SESSION_DELETE_RESPONSE}}},
+    400: {"content": {"application/json": {"example": EXAMPLE_ERROR_RESPONSE}}},
+}
+RESPONSES_LOAD_IMAGE = {
+    200: {"content": {"application/json": {"example": EXAMPLE_LOAD_IMAGE_RESPONSE}}},
+    400: {"content": {"application/json": {"example": EXAMPLE_ERROR_RESPONSE}}},
+}
+RESPONSES_ASK = {
+    200: {"content": {"application/json": {"example": EXAMPLE_ASK_RESPONSE}}},
+    400: {"content": {"application/json": {"example": EXAMPLE_ERROR_RESPONSE}}},
+    503: {"content": {"application/json": {"example": EXAMPLE_MODEL_DISABLED_ASK_RESPONSE}}},
+}
+RESPONSES_GROUND = {
+    200: {"content": {"application/json": {"example": EXAMPLE_GROUND_RESPONSE}}},
+    400: {"content": {"application/json": {"example": EXAMPLE_ERROR_RESPONSE}}},
+    503: {"content": {"application/json": {"example": EXAMPLE_MODEL_DISABLED_GROUND_RESPONSE}}},
+}
+RESPONSES_TASK_ENQUEUE = {
+    200: {"content": {"application/json": {"example": EXAMPLE_TASK_ENQUEUE_RESPONSE}}},
+    400: {"content": {"application/json": {"example": EXAMPLE_ERROR_RESPONSE}}},
+}
+RESPONSES_TASK_POLL = {
+    200: {"content": {"application/json": {"example": EXAMPLE_TASK_POLL_RESPONSE}}},
+    404: {"content": {"application/json": {"example": EXAMPLE_ERROR_RESPONSE}}},
+}
+RESPONSES_CLEAR = {
+    200: {"content": {"application/json": {"example": EXAMPLE_CLEAR_RESPONSE}}},
+    400: {"content": {"application/json": {"example": EXAMPLE_ERROR_RESPONSE}}},
+}
 
 
 def _clean_answer(text: str) -> str:
@@ -645,7 +1009,7 @@ def _shutdown():
         pass
 
 
-@app.get("/healthz")
+@app.get("/healthz", response_model=HealthResponse, responses=RESPONSES_HEALTH)
 def healthz():
     """Health check endpoint."""
     return build_response(
@@ -664,8 +1028,8 @@ def _with_session(session_id: str) -> SessionEntry:
         raise ValueError(str(exc)) from exc
 
 
-@app.post("/session")
-@app.post("/session/create")
+@app.post("/session", response_model=SessionResponse, responses=RESPONSES_SESSION_CREATE)
+@app.post("/session/create", response_model=SessionResponse, responses=RESPONSES_SESSION_CREATE)
 def create_session(request: SessionCreateRequest):
     """Create a new session, optionally preloading an image."""
     try:
@@ -680,7 +1044,7 @@ def create_session(request: SessionCreateRequest):
         return error_response(str(exc))
 
 
-@app.post("/session/reset")
+@app.post("/session/reset", response_model=SessionResponse, responses=RESPONSES_SESSION_RESET)
 def reset_session(request: SessionResetRequest):
     """Reset the state of an existing session."""
     try:
@@ -693,7 +1057,7 @@ def reset_session(request: SessionResetRequest):
         return error_response(str(exc))
 
 
-@app.delete("/session/{session_id}")
+@app.delete("/session/{session_id}", response_model=DeleteSessionResponse, responses=RESPONSES_SESSION_DELETE)
 def delete_session(session_id: str):
     """Delete a session and its associated workspace."""
     try:
@@ -704,7 +1068,7 @@ def delete_session(session_id: str):
         return error_response(str(exc))
 
 
-@app.post("/load_image")
+@app.post("/load_image", response_model=SessionResponse, responses=RESPONSES_LOAD_IMAGE)
 def load_image(request: LoadImageRequest):
     """Load an image into an existing session."""
     try:
@@ -721,7 +1085,7 @@ def load_image(request: LoadImageRequest):
         return error_response(str(exc))
 
 
-@app.post("/ask")
+@app.post("/ask", response_model=AskResponse, responses=RESPONSES_ASK)
 def ask(request: AskRequest):
     """
     Handle a user question. 
@@ -740,14 +1104,19 @@ def ask(request: AskRequest):
                     request.question,
                     reset_history=request.reset_history,
                     auto_topk=verify_topk(),
+                    enable_roi=request.enable_roi,
                 )
             
             # Clean the answer for display (remove internal tokens)
-            answer = _clean_answer(result.get("answer", ""))
+            raw_answer = _clean_answer(
+                result.get("raw_answer") or result.get("original_answer") or ""
+            )
+            answer = _clean_answer(result.get("answer", "")) or raw_answer
             print("[debug]Answer :", answer)
             
             data.update(
                 {
+                    "raw_answer": raw_answer,
                     "answer": answer,
                     "phrases": build_phrase_payload(entry.state),
                 }
@@ -779,7 +1148,7 @@ def ask(request: AskRequest):
         return error_response(str(exc))
 
 
-@app.post("/ground")
+@app.post("/ground", response_model=GroundResponse, responses=RESPONSES_GROUND)
 def ground(request: GroundRequest):
     """Manually trigger grounding for specific phrase indices."""
     try:
@@ -797,7 +1166,7 @@ def ground(request: GroundRequest):
         return error_response(str(exc))
 
 
-@app.post("/tasks")
+@app.post("/tasks", response_model=TaskEnqueueResponse, responses=RESPONSES_TASK_ENQUEUE)
 def enqueue_task_api(request: TaskEnqueueRequest):
     """Enqueue a task for asynchronous processing."""
     try:
@@ -828,7 +1197,7 @@ def enqueue_task_api(request: TaskEnqueueRequest):
         return error_response(str(exc))
 
 
-@app.get("/tasks/{task_id}")
+@app.get("/tasks/{task_id}", response_model=TaskPollResponse, responses=RESPONSES_TASK_POLL)
 def poll_task(task_id: int):
     """Poll task status and output."""
     try:
@@ -841,7 +1210,7 @@ def poll_task(task_id: int):
         return error_response(str(exc))
 
 
-@app.post("/clear")
+@app.post("/clear", response_model=ClearResponse, responses=RESPONSES_CLEAR)
 def clear(request: ClearRequest):
     """Clear the conversation history for a session."""
     try:
