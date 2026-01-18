@@ -1,15 +1,15 @@
 {
-  "grid_h": 15,
-  "grid_w": 23,
+  "grid_h": 9,
+  "grid_w": 13,
   "layer": "mean",
   "head": "mean",
   "reduction": "mean",
   "normalize": "minmax",
   "token_span": {
-    "start": 5,
-    "end": 10,
+    "start": 3,
+    "end": 5,
     "right_open": true
   },
   "span_type": "token_index",
-  "token_text": " skiing on snow-covered terrain"
+  "token_text": " a man"
 }

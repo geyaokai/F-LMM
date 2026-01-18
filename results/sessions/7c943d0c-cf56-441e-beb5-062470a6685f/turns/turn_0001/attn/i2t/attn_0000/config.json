@@ -1,0 +1,32 @@
+{
+  "task_id": 28,
+  "session_id": "7c943d0c-cf56-441e-beb5-062470a6685f",
+  "turn_idx": 1,
+  "attn_id": 0,
+  "type": "ATTN_I2T",
+  "input": {
+    "token_span": [
+      3,
+      5
+    ],
+    "prompt": "What is in the image?",
+    "layer": "mean",
+    "head": "mean",
+    "reduction": "mean"
+  },
+  "meta": {
+    "grid_h": 9,
+    "grid_w": 13,
+    "layer": "mean",
+    "head": "mean",
+    "reduction": "mean",
+    "normalize": "minmax",
+    "token_span": {
+      "start": 3,
+      "end": 5,
+      "right_open": true
+    },
+    "span_type": "token_index",
+    "token_text": " a man"
+  }
+}

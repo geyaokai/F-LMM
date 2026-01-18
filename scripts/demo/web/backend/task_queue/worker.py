@@ -1,4 +1,5 @@
 """SQLite-backed task worker that runs the real model pipelines."""
+
 from __future__ import annotations
 
 import argparse
@@ -23,6 +24,7 @@ from scripts.demo.interact import (  # noqa: E402
     handle_load,
     history_turns,
     load_model,
+    perform_ground_custom,
     pipeline_default_ask,
 )
 from scripts.demo.attention_i2t import (  # noqa: E402
@@ -31,7 +33,9 @@ from scripts.demo.attention_i2t import (  # noqa: E402
     render_overlay,
     token_text_from_ids,
 )
-from scripts.demo.web.backend.prompt_overrides import apply_prompt_overrides  # noqa: E402
+from scripts.demo.web.backend.prompt_overrides import (
+    apply_prompt_overrides,
+)  # noqa: E402
 from scripts.demo.web.backend.task_queue.paths import write_json  # noqa: E402
 from .db import connect, init_db
 from .queue import claim_next_task, mark_done, mark_failed
@@ -212,7 +216,9 @@ class WorkerRuntime:
                     "overlay_path": self._rel(record.overlay_path),
                     "mask_path": self._rel(record.mask_path),
                     "roi_path": self._rel(record.roi_path),
-                    "char_span": self._align_char_span(answer_text, phrase, record.char_span),
+                    "char_span": self._align_char_span(
+                        answer_text, phrase, record.char_span
+                    ),
                     "token_span": record.token_span,
                     "bbox": self._normalize_bbox(record.bbox),
                 }
@@ -227,7 +233,9 @@ class WorkerRuntime:
             "text_source": text_source,
         }
 
-    def handle_ask(self, task: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_ask(
+        self, task: Dict[str, Any], payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
         session = self._session(task["session_id"])
         turn_hint = payload.get("turn_idx") or task.get("turn_idx")
         self._prepare_turn(session, turn_hint)
@@ -254,38 +262,66 @@ class WorkerRuntime:
             turn_idx=session.turn_idx,
             enable_roi=enable_roi,
         )
-        raw_answer = result.get("original_answer") or result.get("raw_answer") or result.get("answer") or ""
+        raw_answer = (
+            result.get("original_answer")
+            or result.get("raw_answer")
+            or result.get("answer")
+            or ""
+        )
         final_answer = result.get("answer") or raw_answer
         return {
             "type": "ASK",
             "turn_idx": session.turn_idx,
-            "history": [{"role": m["role"], "text": m["text"]} for m in session.history],
+            "history": [
+                {"role": m["role"], "text": m["text"]} for m in session.history
+            ],
             "history_turns": history_turns(session),
             "raw_answer": raw_answer,
             "answer": final_answer,
             "roi_answer": result.get("roi_answer"),
             "phrases": self._serialize_phrases(session),
-            "verification": self._serialize_ground(session, answer_text=raw_answer, text_source="raw_answer"),
+            "verification": self._serialize_ground(
+                session, answer_text=raw_answer, text_source="raw_answer"
+            ),
             # backward-compatible alias
-            "ground": self._serialize_ground(session, answer_text=raw_answer, text_source="raw_answer"),
+            "ground": self._serialize_ground(
+                session, answer_text=raw_answer, text_source="raw_answer"
+            ),
         }
 
-    def handle_ground(self, task: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_ground(
+        self, task: Dict[str, Any], payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
         session = self._session(task["session_id"])
         turn_hint = payload.get("turn_idx") or task.get("turn_idx") or session.turn_idx
         session.turn_idx = int(turn_hint)
         indices = payload.get("indices") or payload.get("phrase_indices") or []
-        if not isinstance(indices, list) or not indices:
-            raise ValueError("GROUND payload requires 'indices' list.")
-        records = handle_ground(session, [int(i) for i in indices])
+        custom_items = payload.get("phrases") or payload.get("custom_phrases")
+        if isinstance(indices, list) and indices:
+            records = handle_ground(session, [int(i) for i in indices])
+        elif custom_items is not None:
+            if session.last_answer is None:
+                raise ValueError("No cached answer. Run ASK first.")
+            if not isinstance(custom_items, list) or not custom_items:
+                raise ValueError(
+                    "GROUND custom payload requires non-empty 'phrases' list."
+                )
+            records = perform_ground_custom(session, custom_items)
+        else:
+            raise ValueError("GROUND payload requires 'indices' or 'phrases'.")
+
         if not records:
-            raise ValueError("GROUND produced no records; check payload or previous ASK.")
-        
+            raise ValueError(
+                "GROUND produced no records; check payload or previous ASK."
+            )
+
         ground_data = self._serialize_ground(session)
         return {
             "type": "GROUND",
             "turn_idx": session.turn_idx,
-            "history": [{"role": m["role"], "text": m["text"]} for m in session.history],
+            "history": [
+                {"role": m["role"], "text": m["text"]} for m in session.history
+            ],
             "history_turns": history_turns(session),
             "verification": ground_data,
             "records": ground_data.get("records"),
@@ -293,9 +329,13 @@ class WorkerRuntime:
             "ground": ground_data,
         }
 
-    def handle_attention(self, task: Dict[str, Any], payload: Dict[str, Any], kind: str) -> Dict[str, Any]:
+    def handle_attention(
+        self, task: Dict[str, Any], payload: Dict[str, Any], kind: str
+    ) -> Dict[str, Any]:
         session = self._session(task["session_id"])
-        turn_hint = payload.get("turn_idx") or task.get("turn_idx") or history_turns(session)
+        turn_hint = (
+            payload.get("turn_idx") or task.get("turn_idx") or history_turns(session)
+        )
         session.turn_idx = int(turn_hint)
         if kind != "i2t":
             raise ValueError("Only ATTN_I2T is supported for now.")
@@ -307,14 +347,18 @@ class WorkerRuntime:
         if image_path:
             handle_load(session, image_path)
         if session.current_image is None:
-            raise ValueError("ATTN_I2T requires image_path or a previously loaded image.")
+            raise ValueError(
+                "ATTN_I2T requires image_path or a previously loaded image."
+            )
         token_span_input = payload.get("token_span")
         if token_span_input is None:
             raise ValueError("ATTN_I2T requires token_span.")
         prompt = payload.get("prompt") or payload.get("question")
         if session.last_answer is None:
             if not prompt:
-                raise ValueError("ATTN_I2T requires prompt when no cached answer exists.")
+                raise ValueError(
+                    "ATTN_I2T requires prompt when no cached answer exists."
+                )
             session.last_answer = session.model.answer(
                 image=session.current_image,
                 question=prompt,
@@ -436,7 +480,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    )
     parser = build_parser()
     args = parser.parse_args()
     runtime_probe_results = env_path("FLMM_WEB_RESULTS_DIR", Path.cwd() / "results")

@@ -37,6 +37,7 @@ from scripts.demo.interact import (  # noqa: E402
     history_turns,
     load_model,
     parse_args as cli_parse_args,
+    perform_ground_custom,
     pipeline_default_ask,
 )
 
@@ -127,8 +128,37 @@ class AskRequest(SessionIdentRequest):
         return self
 
 
+class GroundPhrase(APIModel):
+    text: Optional[str] = Field(
+        None, description="Phrase text to match in the latest answer."
+    )
+    char_span: Optional[List[int]] = Field(
+        None, description="Character span [start, end) in answer text."
+    )
+    token_span: Optional[List[int]] = Field(
+        None, description="Token span [start, end) in answer tokens."
+    )
+    occurrence: Optional[int] = Field(
+        None, description="Occurrence index when text appears multiple times (0-based)."
+    )
+
+
 class GroundRequest(SessionIdentRequest):
-    indices: List[int] = Field(..., description="Phrase indices to ground.", min_length=1)
+    indices: Optional[List[int]] = Field(
+        None, description="Phrase indices to ground (legacy)."
+    )
+    phrases: Optional[List[GroundPhrase]] = Field(
+        None,
+        description="Custom phrases with optional spans for grounding.",
+    )
+
+    @model_validator(mode="after")
+    def validate_payload(self):
+        has_indices = bool(self.indices) and isinstance(self.indices, list)
+        has_phrases = bool(self.phrases) and isinstance(self.phrases, list)
+        if not has_indices and not has_phrases:
+            raise ValueError("GROUND payload requires 'indices' or 'phrases'.")
+        return self
 
 
 class ClearRequest(SessionIdentRequest):
@@ -1157,7 +1187,18 @@ def ground(request: GroundRequest):
         entry = _with_session(request.session_id)
         with entry.lock:
             with backend.model_lock:
-                handle_ground(entry.state, request.indices)
+                indices = request.indices or []
+                if indices:
+                    handle_ground(entry.state, indices)
+                else:
+                    if entry.state.last_answer is None:
+                        raise ValueError("No cached answer. Run ASK first.")
+                    phrases = [item.model_dump() for item in (request.phrases or [])]
+                    records = perform_ground_custom(entry.state, phrases)
+                    if not records:
+                        raise ValueError(
+                            "GROUND produced no records; check payload or previous ASK."
+                        )
             data = ground_payload(backend, entry.state)
             data["history"] = snapshot_history(entry.state)
         return build_response(data=data)
