@@ -1,0 +1,1161 @@
+{
+  "answer_text": "The image shows a man standing on a yellow taxi's rear luggage rack, holding what appears to be a foldeded blue piece of furniture or equipment. The taxi has an American flag sticker visible on its side. There are another yellow taxi parked nearby. The man wears a bright orange shirt and dark pants. A street scene with buildings and trees in the background suggests it might be taken in an urban area. The road markings indicate traffic lanes. no readable text is present within the image itself.",
+  "bbox": [
+    160.0,
+    32.0,
+    234.0,
+    113.0
+  ],
+  "bbox_source": "record_index",
+  "source_phrase": "a man",
+  "top_tokens": [
+    {
+      "index": 15,
+      "text": " holding",
+      "char_span": [
+        68,
+        76
+      ],
+      "raw_score": 0.006037439219653606,
+      "score": 1.0
+    },
+    {
+      "index": 53,
+      "text": " a",
+      "char_span": [
+        262,
+        264
+      ],
+      "raw_score": 0.005657916888594627,
+      "score": 0.9364702701568604
+    },
+    {
+      "index": 4,
+      "text": " man",
+      "char_span": [
+        17,
+        21
+      ],
+      "raw_score": 0.005141107831150293,
+      "score": 0.8499594926834106
+    },
+    {
+      "index": 20,
+      "text": " a",
+      "char_span": [
+        95,
+        97
+      ],
+      "raw_score": 0.005031495355069637,
+      "score": 0.8316110372543335
+    },
+    {
+      "index": 19,
+      "text": " be",
+      "char_span": [
+        92,
+        95
+      ],
+      "raw_score": 0.0047096614725887775,
+      "score": 0.7777379751205444
+    },
+    {
+      "index": 52,
+      "text": " wears",
+      "char_span": [
+        256,
+        262
+      ],
+      "raw_score": 0.004387575667351484,
+      "score": 0.7238227725028992
+    },
+    {
+      "index": 55,
+      "text": " orange",
+      "char_span": [
+        271,
+        278
+      ],
+      "raw_score": 0.004351960960775614,
+      "score": 0.7178610563278198
+    },
+    {
+      "index": 54,
+      "text": " bright",
+      "char_span": [
+        264,
+        271
+      ],
+      "raw_score": 0.004064581822603941,
+      "score": 0.6697555184364319
+    }
+  ],
+  "top_phrases": [
+    {
+      "index": 1,
+      "text": "a man",
+      "char_span": [
+        16,
+        21
+      ],
+      "token_span": [
+        3,
+        5
+      ],
+      "score": 0.6798529624938965,
+      "score_max": 0.8499594926834106
+    },
+    {
+      "index": 2,
+      "text": "what",
+      "char_span": [
+        77,
+        81
+      ],
+      "token_span": [
+        16,
+        17
+      ],
+      "score": 0.3553541302680969,
+      "score_max": 0.3553541302680969
+    },
+    {
+      "index": 3,
+      "text": "furniture",
+      "char_span": [
+        121,
+        130
+      ],
+      "token_span": [
+        26,
+        27
+      ],
+      "score": 0.26465335488319397,
+      "score_max": 0.26465335488319397
+    },
+    {
+      "index": 4,
+      "text": "equipment",
+      "char_span": [
+        134,
+        143
+      ],
+      "token_span": [
+        28,
+        29
+      ],
+      "score": 0.21974986791610718,
+      "score_max": 0.21974986791610718
+    },
+    {
+      "index": 5,
+      "text": "The taxi",
+      "char_span": [
+        145,
+        153
+      ],
+      "token_span": [
+        30,
+        32
+      ],
+      "score": 0.11303237080574036,
+      "score_max": 0.12673263251781464
+    },
+    {
+      "index": 0,
+      "text": "The image",
+      "char_span": [
+        0,
+        9
+      ],
+      "token_span": [
+        0,
+        2
+      ],
+      "score": 0.09130731225013733,
+      "score_max": 0.09512840211391449
+    }
+  ],
+  "token_scores": [
+    {
+      "index": 0,
+      "text": "The",
+      "char_span": [
+        0,
+        3
+      ],
+      "raw_score": 0.0005861453246325254,
+      "score": 0.08748622983694077
+    },
+    {
+      "index": 1,
+      "text": " image",
+      "char_span": [
+        3,
+        9
+      ],
+      "raw_score": 0.0006317991646938026,
+      "score": 0.09512840211391449
+    },
+    {
+      "index": 2,
+      "text": " shows",
+      "char_span": [
+        9,
+        15
+      ],
+      "raw_score": 0.0015391003107652068,
+      "score": 0.2470051646232605
+    },
+    {
+      "index": 3,
+      "text": " a",
+      "char_span": [
+        15,
+        17
+      ],
+      "raw_score": 0.0031086981762200594,
+      "score": 0.5097463726997375
+    },
+    {
+      "index": 4,
+      "text": " man",
+      "char_span": [
+        17,
+        21
+      ],
+      "raw_score": 0.005141107831150293,
+      "score": 0.8499594926834106
+    },
+    {
+      "index": 5,
+      "text": " standing",
+      "char_span": [
+        21,
+        30
+      ],
+      "raw_score": 0.004049554001539946,
+      "score": 0.6672399640083313
+    },
+    {
+      "index": 6,
+      "text": " on",
+      "char_span": [
+        30,
+        33
+      ],
+      "raw_score": 0.002955353120341897,
+      "score": 0.4840773344039917
+    },
+    {
+      "index": 7,
+      "text": " a",
+      "char_span": [
+        33,
+        35
+      ],
+      "raw_score": 0.0018885059980675578,
+      "score": 0.30549356341362
+    },
+    {
+      "index": 8,
+      "text": " yellow",
+      "char_span": [
+        35,
+        42
+      ],
+      "raw_score": 0.0014641385059803724,
+      "score": 0.23445701599121094
+    },
+    {
+      "index": 9,
+      "text": " taxi",
+      "char_span": [
+        42,
+        47
+      ],
+      "raw_score": 0.0014841357478871942,
+      "score": 0.23780442774295807
+    },
+    {
+      "index": 10,
+      "text": "'s",
+      "char_span": [
+        47,
+        49
+      ],
+      "raw_score": 0.0010411360999569297,
+      "score": 0.16364894807338715
+    },
+    {
+      "index": 11,
+      "text": " rear",
+      "char_span": [
+        49,
+        54
+      ],
+      "raw_score": 0.0012408477487042546,
+      "score": 0.19707947969436646
+    },
+    {
+      "index": 12,
+      "text": " luggage",
+      "char_span": [
+        54,
+        62
+      ],
+      "raw_score": 0.0010489905253052711,
+      "score": 0.1649637371301651
+    },
+    {
+      "index": 13,
+      "text": " rack",
+      "char_span": [
+        62,
+        67
+      ],
+      "raw_score": 0.0025486561935395002,
+      "score": 0.4159987270832062
+    },
+    {
+      "index": 14,
+      "text": ",",
+      "char_span": [
+        67,
+        68
+      ],
+      "raw_score": 0.0032446952536702156,
+      "score": 0.5325114727020264
+    },
+    {
+      "index": 15,
+      "text": " holding",
+      "char_span": [
+        68,
+        76
+      ],
+      "raw_score": 0.006037439219653606,
+      "score": 1.0
+    },
+    {
+      "index": 16,
+      "text": " what",
+      "char_span": [
+        76,
+        81
+      ],
+      "raw_score": 0.002186369616538286,
+      "score": 0.3553541302680969
+    },
+    {
+      "index": 17,
+      "text": " appears",
+      "char_span": [
+        81,
+        89
+      ],
+      "raw_score": 0.0006924638291820884,
+      "score": 0.10528330504894257
+    },
+    {
+      "index": 18,
+      "text": " to",
+      "char_span": [
+        89,
+        92
+      ],
+      "raw_score": 0.0020959265530109406,
+      "score": 0.3402145206928253
+    },
+    {
+      "index": 19,
+      "text": " be",
+      "char_span": [
+        92,
+        95
+      ],
+      "raw_score": 0.0047096614725887775,
+      "score": 0.7777379751205444
+    },
+    {
+      "index": 20,
+      "text": " a",
+      "char_span": [
+        95,
+        97
+      ],
+      "raw_score": 0.005031495355069637,
+      "score": 0.8316110372543335
+    },
+    {
+      "index": 21,
+      "text": " fold",
+      "char_span": [
+        97,
+        102
+      ],
+      "raw_score": 0.002031174022704363,
+      "score": 0.32937532663345337
+    },
+    {
+      "index": 22,
+      "text": "eded",
+      "char_span": [
+        102,
+        106
+      ],
+      "raw_score": 0.00315985269844532,
+      "score": 0.5183093547821045
+    },
+    {
+      "index": 23,
+      "text": " blue",
+      "char_span": [
+        106,
+        111
+      ],
+      "raw_score": 0.0013287031324580312,
+      "score": 0.2117859423160553
+    },
+    {
+      "index": 24,
+      "text": " piece",
+      "char_span": [
+        111,
+        117
+      ],
+      "raw_score": 0.002299829851835966,
+      "score": 0.37434670329093933
+    },
+    {
+      "index": 25,
+      "text": " of",
+      "char_span": [
+        117,
+        120
+      ],
+      "raw_score": 0.00276375119574368,
+      "score": 0.4520043432712555
+    },
+    {
+      "index": 26,
+      "text": " furniture",
+      "char_span": [
+        120,
+        130
+      ],
+      "raw_score": 0.0016445292858406901,
+      "score": 0.26465335488319397
+    },
+    {
+      "index": 27,
+      "text": " or",
+      "char_span": [
+        130,
+        133
+      ],
+      "raw_score": 0.0014628026401624084,
+      "score": 0.23423339426517487
+    },
+    {
+      "index": 28,
+      "text": " equipment",
+      "char_span": [
+        133,
+        143
+      ],
+      "raw_score": 0.001376279047690332,
+      "score": 0.21974986791610718
+    },
+    {
+      "index": 29,
+      "text": ".",
+      "char_span": [
+        143,
+        144
+      ],
+      "raw_score": 0.0008464010315947235,
+      "score": 0.1310514658689499
+    },
+    {
+      "index": 30,
+      "text": " The",
+      "char_span": [
+        144,
+        148
+      ],
+      "raw_score": 0.0008206006605178118,
+      "score": 0.12673263251781464
+    },
+    {
+      "index": 31,
+      "text": " taxi",
+      "char_span": [
+        148,
+        153
+      ],
+      "raw_score": 0.0006569117540493608,
+      "score": 0.09933210164308548
+    },
+    {
+      "index": 32,
+      "text": " has",
+      "char_span": [
+        153,
+        157
+      ],
+      "raw_score": 0.001587764360010624,
+      "score": 0.25515124201774597
+    },
+    {
+      "index": 33,
+      "text": " an",
+      "char_span": [
+        157,
+        160
+      ],
+      "raw_score": 0.0013688463950529695,
+      "score": 0.21850568056106567
+    },
+    {
+      "index": 34,
+      "text": " American",
+      "char_span": [
+        160,
+        169
+      ],
+      "raw_score": 0.0006346600130200386,
+      "score": 0.09560729563236237
+    },
+    {
+      "index": 35,
+      "text": " flag",
+      "char_span": [
+        169,
+        174
+      ],
+      "raw_score": 0.0007435090374201536,
+      "score": 0.11382796615362167
+    },
+    {
+      "index": 36,
+      "text": " sticker",
+      "char_span": [
+        174,
+        182
+      ],
+      "raw_score": 0.0005070521146990359,
+      "score": 0.07424649596214294
+    },
+    {
+      "index": 37,
+      "text": " visible",
+      "char_span": [
+        182,
+        190
+      ],
+      "raw_score": 0.0003474763361737132,
+      "score": 0.04753447324037552
+    },
+    {
+      "index": 38,
+      "text": " on",
+      "char_span": [
+        190,
+        193
+      ],
+      "raw_score": 0.00037154112942516804,
+      "score": 0.051562774926424026
+    },
+    {
+      "index": 39,
+      "text": " its",
+      "char_span": [
+        193,
+        197
+      ],
+      "raw_score": 0.0002540275745559484,
+      "score": 0.03189171478152275
+    },
+    {
+      "index": 40,
+      "text": " side",
+      "char_span": [
+        197,
+        202
+      ],
+      "raw_score": 0.00034898726153187454,
+      "score": 0.047787394374608994
+    },
+    {
+      "index": 41,
+      "text": ".",
+      "char_span": [
+        202,
+        203
+      ],
+      "raw_score": 0.0008413176401518285,
+      "score": 0.13020053505897522
+    },
+    {
+      "index": 42,
+      "text": " There",
+      "char_span": [
+        203,
+        209
+      ],
+      "raw_score": 0.0006318652303889394,
+      "score": 0.09513946622610092
+    },
+    {
+      "index": 43,
+      "text": " are",
+      "char_span": [
+        209,
+        213
+      ],
+      "raw_score": 0.0008381803054362535,
+      "score": 0.12967535853385925
+    },
+    {
+      "index": 44,
+      "text": " another",
+      "char_span": [
+        213,
+        221
+      ],
+      "raw_score": 0.0007588036824017763,
+      "score": 0.11638819426298141
+    },
+    {
+      "index": 45,
+      "text": " yellow",
+      "char_span": [
+        221,
+        228
+      ],
+      "raw_score": 0.0005597282433882356,
+      "score": 0.08306416869163513
+    },
+    {
+      "index": 46,
+      "text": " taxi",
+      "char_span": [
+        228,
+        233
+      ],
+      "raw_score": 0.0005057822563685477,
+      "score": 0.07403393089771271
+    },
+    {
+      "index": 47,
+      "text": " parked",
+      "char_span": [
+        233,
+        240
+      ],
+      "raw_score": 0.0007265753229148686,
+      "score": 0.11099336296319962
+    },
+    {
+      "index": 48,
+      "text": " nearby",
+      "char_span": [
+        240,
+        247
+      ],
+      "raw_score": 0.0005518340039998293,
+      "score": 0.08174271881580353
+    },
+    {
+      "index": 49,
+      "text": ".",
+      "char_span": [
+        247,
+        248
+      ],
+      "raw_score": 0.0008075747173279524,
+      "score": 0.1245521754026413
+    },
+    {
+      "index": 50,
+      "text": " The",
+      "char_span": [
+        248,
+        252
+      ],
+      "raw_score": 0.0009708476136438549,
+      "score": 0.1518830806016922
+    },
+    {
+      "index": 51,
+      "text": " man",
+      "char_span": [
+        252,
+        256
+      ],
+      "raw_score": 0.0018824366852641106,
+      "score": 0.30447760224342346
+    },
+    {
+      "index": 52,
+      "text": " wears",
+      "char_span": [
+        256,
+        262
+      ],
+      "raw_score": 0.004387575667351484,
+      "score": 0.7238227725028992
+    },
+    {
+      "index": 53,
+      "text": " a",
+      "char_span": [
+        262,
+        264
+      ],
+      "raw_score": 0.005657916888594627,
+      "score": 0.9364702701568604
+    },
+    {
+      "index": 54,
+      "text": " bright",
+      "char_span": [
+        264,
+        271
+      ],
+      "raw_score": 0.004064581822603941,
+      "score": 0.6697555184364319
+    },
+    {
+      "index": 55,
+      "text": " orange",
+      "char_span": [
+        271,
+        278
+      ],
+      "raw_score": 0.004351960960775614,
+      "score": 0.7178610563278198
+    },
+    {
+      "index": 56,
+      "text": " shirt",
+      "char_span": [
+        278,
+        284
+      ],
+      "raw_score": 0.0034682191908359528,
+      "score": 0.5699280500411987
+    },
+    {
+      "index": 57,
+      "text": " and",
+      "char_span": [
+        284,
+        288
+      ],
+      "raw_score": 0.003433126024901867,
+      "score": 0.5640536546707153
+    },
+    {
+      "index": 58,
+      "text": " dark",
+      "char_span": [
+        288,
+        293
+      ],
+      "raw_score": 0.00314375851303339,
+      "score": 0.5156152844429016
+    },
+    {
+      "index": 59,
+      "text": " pants",
+      "char_span": [
+        293,
+        299
+      ],
+      "raw_score": 0.0019239321118220687,
+      "score": 0.3114236891269684
+    },
+    {
+      "index": 60,
+      "text": ".",
+      "char_span": [
+        299,
+        300
+      ],
+      "raw_score": 0.00105442909989506,
+      "score": 0.16587412357330322
+    },
+    {
+      "index": 61,
+      "text": " A",
+      "char_span": [
+        300,
+        302
+      ],
+      "raw_score": 0.000824171002022922,
+      "score": 0.12733028829097748
+    },
+    {
+      "index": 62,
+      "text": " street",
+      "char_span": [
+        302,
+        309
+      ],
+      "raw_score": 0.0010574423940852284,
+      "score": 0.16637852787971497
+    },
+    {
+      "index": 63,
+      "text": " scene",
+      "char_span": [
+        309,
+        315
+      ],
+      "raw_score": 0.0006731048924848437,
+      "score": 0.10204273462295532
+    },
+    {
+      "index": 64,
+      "text": " with",
+      "char_span": [
+        315,
+        320
+      ],
+      "raw_score": 0.0006622130167670548,
+      "score": 0.10021950304508209
+    },
+    {
+      "index": 65,
+      "text": " buildings",
+      "char_span": [
+        320,
+        330
+      ],
+      "raw_score": 0.0006025618058629334,
+      "score": 0.09023424983024597
+    },
+    {
+      "index": 66,
+      "text": " and",
+      "char_span": [
+        330,
+        334
+      ],
+      "raw_score": 0.000705494312569499,
+      "score": 0.10746452957391739
+    },
+    {
+      "index": 67,
+      "text": " trees",
+      "char_span": [
+        334,
+        340
+      ],
+      "raw_score": 0.0004689869820140302,
+      "score": 0.06787462532520294
+    },
+    {
+      "index": 68,
+      "text": " in",
+      "char_span": [
+        340,
+        343
+      ],
+      "raw_score": 0.000280656386166811,
+      "score": 0.03634921833872795
+    },
+    {
+      "index": 69,
+      "text": " the",
+      "char_span": [
+        343,
+        347
+      ],
+      "raw_score": 0.0003599792835302651,
+      "score": 0.0496273934841156
+    },
+    {
+      "index": 70,
+      "text": " background",
+      "char_span": [
+        347,
+        358
+      ],
+      "raw_score": 0.0003004770551342517,
+      "score": 0.039667077362537384
+    },
+    {
+      "index": 71,
+      "text": " suggests",
+      "char_span": [
+        358,
+        367
+      ],
+      "raw_score": 0.0005639918381348252,
+      "score": 0.08377786725759506
+    },
+    {
+      "index": 72,
+      "text": " it",
+      "char_span": [
+        367,
+        370
+      ],
+      "raw_score": 0.0005768573610112071,
+      "score": 0.08593147993087769
+    },
+    {
+      "index": 73,
+      "text": " might",
+      "char_span": [
+        370,
+        376
+      ],
+      "raw_score": 0.0003201945801265538,
+      "score": 0.042967673391103745
+    },
+    {
+      "index": 74,
+      "text": " be",
+      "char_span": [
+        376,
+        379
+      ],
+      "raw_score": 0.0010271966457366943,
+      "score": 0.16131556034088135
+    },
+    {
+      "index": 75,
+      "text": " taken",
+      "char_span": [
+        379,
+        385
+      ],
+      "raw_score": 0.0009524933411739767,
+      "score": 0.14881068468093872
+    },
+    {
+      "index": 76,
+      "text": " in",
+      "char_span": [
+        385,
+        388
+      ],
+      "raw_score": 0.0008786522666923702,
+      "score": 0.1364501267671585
+    },
+    {
+      "index": 77,
+      "text": " an",
+      "char_span": [
+        388,
+        391
+      ],
+      "raw_score": 0.001005779835395515,
+      "score": 0.15773051977157593
+    },
+    {
+      "index": 78,
+      "text": " urban",
+      "char_span": [
+        391,
+        397
+      ],
+      "raw_score": 0.0009621329954825342,
+      "score": 0.1504243016242981
+    },
+    {
+      "index": 79,
+      "text": " area",
+      "char_span": [
+        397,
+        402
+      ],
+      "raw_score": 0.0006225344259291887,
+      "score": 0.093577541410923
+    },
+    {
+      "index": 80,
+      "text": ".",
+      "char_span": [
+        402,
+        403
+      ],
+      "raw_score": 0.0003945781500078738,
+      "score": 0.055419035255908966
+    },
+    {
+      "index": 81,
+      "text": " The",
+      "char_span": [
+        403,
+        407
+      ],
+      "raw_score": 0.0007061249925754964,
+      "score": 0.1075701043009758
+    },
+    {
+      "index": 82,
+      "text": " road",
+      "char_span": [
+        407,
+        412
+      ],
+      "raw_score": 0.00044548738515004516,
+      "score": 0.06394093483686447
+    },
+    {
+      "index": 83,
+      "text": " markings",
+      "char_span": [
+        412,
+        421
+      ],
+      "raw_score": 0.0003262778918724507,
+      "score": 0.04398598149418831
+    },
+    {
+      "index": 84,
+      "text": " indicate",
+      "char_span": [
+        421,
+        430
+      ],
+      "raw_score": 0.00032170405029319227,
+      "score": 0.04322034865617752
+    },
+    {
+      "index": 85,
+      "text": " traffic",
+      "char_span": [
+        430,
+        438
+      ],
+      "raw_score": 0.00033830167376436293,
+      "score": 0.04599869251251221
+    },
+    {
+      "index": 86,
+      "text": " lanes",
+      "char_span": [
+        438,
+        444
+      ],
+      "raw_score": 0.00029303922201506793,
+      "score": 0.038422029465436935
+    },
+    {
+      "index": 87,
+      "text": ".",
+      "char_span": [
+        444,
+        445
+      ],
+      "raw_score": 0.0003670337318908423,
+      "score": 0.050808265805244446
+    },
+    {
+      "index": 88,
+      "text": " no",
+      "char_span": [
+        445,
+        448
+      ],
+      "raw_score": 0.00023551502090413123,
+      "score": 0.02879282645881176
+    },
+    {
+      "index": 89,
+      "text": " readable",
+      "char_span": [
+        448,
+        457
+      ],
+      "raw_score": 0.00019088199769612402,
+      "score": 0.021321527659893036
+    },
+    {
+      "index": 90,
+      "text": " text",
+      "char_span": [
+        457,
+        462
+      ],
+      "raw_score": 0.00013086509716231376,
+      "score": 0.01127505861222744
+    },
+    {
+      "index": 91,
+      "text": " is",
+      "char_span": [
+        462,
+        465
+      ],
+      "raw_score": 8.838359644869342e-05,
+      "score": 0.004163910634815693
+    },
+    {
+      "index": 92,
+      "text": " present",
+      "char_span": [
+        465,
+        473
+      ],
+      "raw_score": 9.840267011895776e-05,
+      "score": 0.005841043312102556
+    },
+    {
+      "index": 93,
+      "text": " within",
+      "char_span": [
+        473,
+        480
+      ],
+      "raw_score": 0.00012697761121671647,
+      "score": 0.010624316520988941
+    },
+    {
+      "index": 94,
+      "text": " the",
+      "char_span": [
+        480,
+        484
+      ],
+      "raw_score": 0.00021022370492573828,
+      "score": 0.02455921284854412
+    },
+    {
+      "index": 95,
+      "text": " image",
+      "char_span": [
+        484,
+        490
+      ],
+      "raw_score": 8.183472527889535e-05,
+      "score": 0.003067668993026018
+    },
+    {
+      "index": 96,
+      "text": " itself",
+      "char_span": [
+        490,
+        497
+      ],
+      "raw_score": 6.350868352456018e-05,
+      "score": 0.0
+    },
+    {
+      "index": 97,
+      "text": ".",
+      "char_span": [
+        497,
+        498
+      ],
+      "raw_score": 0.00014794882736168802,
+      "score": 0.01413477212190628
+    }
+  ]
+}

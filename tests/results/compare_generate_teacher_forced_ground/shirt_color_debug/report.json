@@ -1,0 +1,149 @@
+{
+  "created_at": "2026-03-19 22:03:44",
+  "config": "/home/hechen/gyk/F-LMM/configs/qwen/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.py",
+  "checkpoint": "/home/hechen/gyk/F-LMM/checkpoints/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.pth",
+  "image_path": "/home/hechen/gyk/F-LMM/results/sessions/a4937898-a4b2-4cff-9bfb-60c1173fa717/images/upload_1773922418654.jpg",
+  "question": "what is the color of the man's shirt?",
+  "answer_text": "The man in the image is wearing a yellow shirt.",
+  "phrase": "shirt",
+  "char_span": [
+    41,
+    46
+  ],
+  "token_span": [
+    9,
+    10
+  ],
+  "phrase_candidates": [
+    {
+      "text": "a yellow shirt",
+      "char_span": [
+        32,
+        46
+      ],
+      "token_span": [
+        7,
+        10
+      ]
+    },
+    {
+      "text": "man",
+      "char_span": [
+        4,
+        7
+      ],
+      "token_span": [
+        1,
+        2
+      ]
+    }
+  ],
+  "generate": {
+    "attention_shape": [
+      28,
+      28,
+      11,
+      9,
+      13
+    ],
+    "hidden_shape": [
+      11,
+      3584
+    ],
+    "artifacts": {
+      "mode": "generate",
+      "coarse_bbox": [
+        152,
+        30,
+        231,
+        107
+      ],
+      "final_bbox": [
+        160,
+        32,
+        234,
+        112
+      ],
+      "coarse_mask_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/generate/coarse_mask.png",
+      "final_mask_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/generate/final_mask.png",
+      "coarse_overlay_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/generate/coarse_overlay.png",
+      "final_overlay_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/generate/final_overlay.png",
+      "heat_overlay_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/generate/heat_overlay.png",
+      "heatmap_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/generate/heatmap.png",
+      "roi_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/generate/roi.png",
+      "heat_meta": {
+        "grid_h": 9,
+        "grid_w": 13,
+        "layer": "mean",
+        "head": "mean",
+        "reduction": "mean",
+        "normalize": "minmax",
+        "token_span": {
+          "start": 9,
+          "end": 10,
+          "right_open": true
+        },
+        "span_type": "token_index",
+        "analysis_type": "token_to_region"
+      }
+    }
+  },
+  "teacher_forced": {
+    "attention_shape": [
+      28,
+      28,
+      11,
+      9,
+      13
+    ],
+    "hidden_shape": [
+      11,
+      3584
+    ],
+    "answer_token_span_in_full": [
+      188,
+      199
+    ],
+    "artifacts": {
+      "mode": "teacher_forced",
+      "coarse_bbox": [
+        151,
+        34,
+        245,
+        162
+      ],
+      "final_bbox": [
+        160,
+        32,
+        234,
+        114
+      ],
+      "coarse_mask_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/teacher_forced/coarse_mask.png",
+      "final_mask_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/teacher_forced/final_mask.png",
+      "coarse_overlay_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/teacher_forced/coarse_overlay.png",
+      "final_overlay_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/teacher_forced/final_overlay.png",
+      "heat_overlay_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/teacher_forced/heat_overlay.png",
+      "heatmap_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/teacher_forced/heatmap.png",
+      "roi_path": "tests/results/compare_generate_teacher_forced_ground/shirt_color_debug/teacher_forced/roi.png",
+      "heat_meta": {
+        "grid_h": 9,
+        "grid_w": 13,
+        "layer": "mean",
+        "head": "mean",
+        "reduction": "mean",
+        "normalize": "minmax",
+        "token_span": {
+          "start": 9,
+          "end": 10,
+          "right_open": true
+        },
+        "span_type": "token_index",
+        "analysis_type": "token_to_region"
+      }
+    }
+  },
+  "diff": {
+    "coarse_mask_iou": 0.32083421108068255,
+    "final_mask_iou": 0.8650306748466258
+  }
+}

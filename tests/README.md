@@ -13,6 +13,7 @@
 |------|------|----------|
 | [`test_frozen_qwen.py`](./test_frozen_qwen.py) | Qwen 模型完整测试套件（8个测试） | ~2-3 分钟 |
 | [`diagnose_image_grid_thw.py`](./diagnose_image_grid_thw.py) | image_grid_thw 问题诊断 | ~30 秒 |
+| [`compare_generate_teacher_forced_ground.py`](./compare_generate_teacher_forced_ground.py) | 对比 generate-cache 与 teacher-forced grounding | ~1-2 分钟 |
 | [`verify_data_pipeline.py`](./verify_data_pipeline.py) | 数据管道验证 | ~1 分钟 |
 | [`test_image_token_encoding.py`](./test_image_token_encoding.py) | 图像 token 编码测试 | ~30 秒 |
 | [`test_token_matching.py`](./test_token_matching.py) | Token 匹配测试 | ~20 秒 |
@@ -49,6 +50,14 @@ python test_frozen_qwen.py
 
 # 快速诊断
 python diagnose_image_grid_thw.py
+
+# 对比在线 grounding 和 teacher-forced grounding
+python compare_generate_teacher_forced_ground.py \
+  --image data/custom/shampoo_room.png \
+  --question "Where is the shampoo?" \
+  --phrase shampoo \
+  --device cuda:0 \
+  --device-map none
 
 # 验证数据管道
 python verify_data_pipeline.py
@@ -142,6 +151,46 @@ python diagnose_image_grid_thw.py
 ```bash
 python verify_data_pipeline.py
 ```
+
+---
+
+### 4. generate-cache / teacher-forced grounding 对比 (`compare_generate_teacher_forced_ground.py`)
+
+**用途**：定位在线 demo grounding 变差到底是：
+
+- `answer()` 返回的生成态 attention cache 本身更散
+- 还是后续 phrase span / mask head / SAM / bbox 后处理出了问题
+
+**它会做什么**：
+
+1. 先正常跑一遍 `model.answer(...)`
+2. 选定一个 answer phrase
+3. 用当前在线 cache 做一次 grounding
+4. 再把同一个 answer 作为 teacher-forced assistant 文本喂回模型做 full forward
+5. 对同一个 phrase 再做一次 grounding
+6. 把两条路径的 heatmap / mask / overlay / bbox / IoU 一起落盘
+
+**运行**：
+
+```bash
+python compare_generate_teacher_forced_ground.py \
+  --config ../configs/qwen/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.py \
+  --checkpoint ../checkpoints/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.pth \
+  --image ../data/custom/shampoo_room.png \
+  --question "Where is the shampoo?" \
+  --phrase shampoo \
+  --device cuda:0 \
+  --device-map none
+```
+
+**主要输出**：
+
+- `generate/heat_overlay.png`
+- `teacher_forced/heat_overlay.png`
+- `generate/final_overlay.png`
+- `teacher_forced/final_overlay.png`
+- `comparison_panel.png`
+- `report.json`
 
 ---
 
@@ -318,4 +367,3 @@ timeout 600 python test_frozen_qwen.py
 
 **最后更新**：2025-11-09  
 **维护者**：AI Assistant
-

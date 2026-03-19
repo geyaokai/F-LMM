@@ -133,12 +133,25 @@ class WorkerRuntime:
         cfg_path = Path(self.args.config)
         if not cfg_path.is_absolute():
             cfg_path = (REPO_ROOT / cfg_path).resolve()
+        results_dir = Path(self.args.results_dir).expanduser().resolve()
+        LOGGER.info(
+            "Worker runtime config=%s checkpoint=%s prompt_file=%s device=%s "
+            "device_map=%s device_max_memory=%s results_dir=%s no_sam=%s",
+            cfg_path,
+            self.args.checkpoint,
+            self.args.prompt_file,
+            self.args.device,
+            self.args.device_map,
+            self.args.device_max_memory,
+            results_dir,
+            self.args.no_sam,
+        )
         LOGGER.info("Loading config: %s", cfg_path)
         self.cfg = Config.fromfile(cfg_path)
         LOGGER.info("Loading model for worker...")
         apply_prompt_overrides(self.cfg, self.args, self.args.prompt_file)
         self.model = load_model(self.cfg, self.args)
-        self.results_dir = Path(self.args.results_dir).expanduser().resolve()
+        self.results_dir = results_dir
         self.results_dir.mkdir(parents=True, exist_ok=True)
         self.sessions: Dict[str, SessionState] = {}
         self.results_mount = os.getenv("FLMM_WEB_RESULTS_MOUNT", "/results").rstrip("/")

@@ -411,6 +411,160 @@ class FrozenQwenSAM(FrozenQwen):
         self._bad_words_ids = bad_words_ids
         return bad_words_ids
 
+    def _find_last_subsequence(
+            self, haystack: List[int], needle: List[int]) -> Optional[int]:
+        if not needle or len(needle) > len(haystack):
+            return None
+        last = None
+        limit = len(haystack) - len(needle) + 1
+        for start in range(limit):
+            if haystack[start:start + len(needle)] == needle:
+                last = start
+        return last
+
+    def _tokenize_answer_text(self, answer_text: str) -> List[int]:
+        tokenized = self.tokenizer(answer_text, add_special_tokens=False)
+        return tokenized.get('input_ids', [])
+
+    def _resolve_answer_alignment(
+            self,
+            full_ids: List[int],
+            answer_text: str,
+            output_ids: Optional[torch.Tensor] = None) -> Tuple[List[int], str, Optional[List[int]]]:
+        canonical_answer_ids = self._tokenize_answer_text(answer_text)
+        raw_generated_ids: Optional[List[int]] = None
+        candidates: List[Tuple[str, List[int]]] = []
+        if output_ids is not None:
+            raw_generated_ids = output_ids.detach().cpu().tolist()
+            if raw_generated_ids:
+                candidates.append(('generated_output_ids', raw_generated_ids))
+        if canonical_answer_ids and canonical_answer_ids != raw_generated_ids:
+            candidates.append(('retokenized_answer_text', canonical_answer_ids))
+
+        for alignment_source, candidate_ids in candidates:
+            answer_start = self._find_last_subsequence(full_ids, candidate_ids)
+            if answer_start is not None:
+                if alignment_source != 'generated_output_ids':
+                    print_log(
+                        'Answer-cache alignment fell back to retokenized answer_text '
+                        f'(raw_len={len(raw_generated_ids or [])}, canonical_len={len(canonical_answer_ids)}).'
+                    )
+                return candidate_ids, alignment_source, raw_generated_ids
+
+        if canonical_answer_ids:
+            return canonical_answer_ids, 'retokenized_answer_text_missing', raw_generated_ids
+        if raw_generated_ids:
+            return raw_generated_ids, 'generated_output_ids_missing', raw_generated_ids
+        return [], 'empty_answer', raw_generated_ids
+
+    @torch.no_grad()
+    def build_answer_cache(self,
+                           image,
+                           question: str,
+                           answer_text: str,
+                           history: Optional[List[Dict[str, str]]] = None,
+                           output_ids: Optional[torch.Tensor] = None) -> Dict:
+        conversation = self._build_conversation(image, question, history=history)
+        conversation = list(conversation)
+        conversation.append({
+            'role': 'assistant',
+            'content': [{'type': 'text', 'text': answer_text}],
+        })
+        prompt_text = self.processor.apply_chat_template(
+            conversation, tokenize=False, add_generation_prompt=False)
+        inputs = self.processor(
+            text=[prompt_text],
+            images=[image],
+            return_tensors='pt',
+            padding=False)
+        input_ids = inputs['input_ids'].to(self.qwen_device)
+        pixel_values = inputs['pixel_values'].to(
+            device=self.qwen_device, dtype=self.qwen_model.dtype)
+        image_grid_thw = inputs['image_grid_thw'].to(self.qwen_device)
+        attention_mask = inputs.get('attention_mask')
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_ids)
+        else:
+            attention_mask = attention_mask.to(self.qwen_device)
+
+        prior_vision_tokens = self._last_vision_tokens
+        self._last_vision_tokens = None
+        outputs = self.qwen_model(
+            input_ids=input_ids,
+            pixel_values=pixel_values,
+            image_grid_thw=image_grid_thw,
+            attention_mask=attention_mask,
+            output_attentions=True,
+            output_hidden_states=True,
+            return_dict=True,
+        )
+
+        full_ids = input_ids[0].detach().cpu().tolist()
+        answer_ids, alignment_source, raw_generated_ids = self._resolve_answer_alignment(
+            full_ids=full_ids,
+            answer_text=answer_text,
+            output_ids=output_ids,
+        )
+        answer_start = self._find_last_subsequence(full_ids, answer_ids)
+        if answer_ids and answer_start is None:
+            raise RuntimeError(
+                'Unable to align generated answer tokens inside the teacher-forced prompt. '
+                f'alignment_source={alignment_source}, '
+                f'raw_output_len={len(raw_generated_ids or [])}, '
+                f'canonical_output_len={len(self._tokenize_answer_text(answer_text))}'
+            )
+        if answer_start is None:
+            answer_start = len(full_ids)
+        answer_end = answer_start + len(answer_ids)
+        aligned_output_ids = torch.tensor(answer_ids, dtype=torch.long)
+
+        prep_inputs = self._prepare_inputs({'input_ids': input_ids[0]})
+        images_seq_mask = prep_inputs['images_seq_mask']
+        assert images_seq_mask.any()
+        grid = image_grid_thw
+        qwen_h = int(grid[0, 1].item()) // self.merge_size
+        qwen_w = int(grid[0, 2].item()) // self.merge_size
+
+        attentions: List[torch.Tensor] = []
+        for attn in outputs.attentions:
+            layer_attn = attn[0]
+            layer_image = layer_attn[..., images_seq_mask]
+            num_image_tokens = layer_image.shape[-1]
+            if num_image_tokens != qwen_h * qwen_w:
+                raise RuntimeError(
+                    f'Answer-cache image token count mismatch: {num_image_tokens} '
+                    f'!= {qwen_h * qwen_w}'
+                )
+            layer_image = layer_image.view(
+                self.num_heads, layer_attn.shape[-2], qwen_h, qwen_w)
+            attentions.append(layer_image[:, answer_start:answer_end])
+        attention_maps = torch.stack(attentions)
+
+        weights = self.get_text_layer_weights().view(-1, 1, 1)
+        hs_layers = outputs.hidden_states[-self.num_layers:]
+        hs_stack = torch.stack([hs[0] for hs in hs_layers])
+        hidden_states = (hs_stack * weights).sum(0)[answer_start:answer_end]
+
+        meta_data = self._build_meta_data(image, image_grid_thw)
+        vision_tokens = self._last_vision_tokens
+        if vision_tokens is None:
+            vision_tokens = prior_vision_tokens
+        grid_snapshot = image_grid_thw.detach().cpu()
+        return dict(
+            output_ids=aligned_output_ids,
+            output_text=answer_text,
+            hidden_states=hidden_states,
+            attention_maps=attention_maps,
+            meta_data=meta_data,
+            vision_tokens=vision_tokens,
+            image_grid_thw=grid_snapshot,
+            prompt_text=prompt_text,
+            full_input_ids=full_ids,
+            answer_token_span_in_full=[int(answer_start), int(answer_end)],
+            output_ids_alignment_source=alignment_source,
+            raw_generated_output_ids=raw_generated_ids,
+        )
+
     def _prepare_for_generation(self,
                                 image_processor,
                                 prompt_template,
@@ -486,17 +640,8 @@ class FrozenQwenSAM(FrozenQwen):
             pad_token_id=pad_id,
             bad_words_ids=bad_words_ids or None,
             return_dict_in_generate=True,
-            output_attentions=True,
-            output_hidden_states=True,
         )
         sequences = gen_out if isinstance(gen_out, torch.Tensor) else gen_out.sequences
-        gen_attentions = None
-        gen_hidden_states = None
-        if not isinstance(gen_out, torch.Tensor):
-            gen_attentions = getattr(gen_out, 'attentions', None)
-            gen_hidden_states = getattr(gen_out, 'hidden_states', None)
-            if gen_hidden_states is None:
-                gen_hidden_states = getattr(gen_out, 'decoder_hidden_states', None)
         input_len = input_ids.shape[-1]
         gen_token_ids = sequences[0, input_len:]
         # IMPORTANT: downstream phrase token spans are computed from decoded answer text,
@@ -516,103 +661,16 @@ class FrozenQwenSAM(FrozenQwen):
         gen_token_ids = gen_token_ids[:cut]
         output_ids = gen_token_ids.detach().cpu()
         output_text = self.tokenizer.decode(output_ids, skip_special_tokens=True)
-        gen_len_effective = int(output_ids.shape[0])
-        grid = image_grid_thw
-        qwen_h = int(grid[0, 1].item()) // self.merge_size
-        qwen_w = int(grid[0, 2].item()) // self.merge_size
-        prep_inputs = self._prepare_inputs({'input_ids': sequences[0]})
-        images_seq_mask = prep_inputs['images_seq_mask']
-        assert images_seq_mask.any()
-        generation_slice = slice(input_len, sequences.shape[-1])
-        attentions: List[torch.Tensor] = []
-        # import pdb; pdb.set_trace()
-        # outputs.attentions shape is [num_layers, batch, num_heads, seq_len, seq_len]
-        # Prefer attentions returned by generate(); handle both per-step and full-matrix formats.
-        if gen_attentions is None:
-            raise RuntimeError('generate() did not return attentions; cannot run single-pass answer().')
-        # Common HF format for decoder-only generate():
-        #   gen_attentions[step][layer] -> [batch, heads, q_len(=1), k_len(past_len)]
-        is_per_step_attn = hasattr(gen_attentions, '__len__') and len(gen_attentions) > 0 and hasattr(gen_attentions[0], '__len__')
-        if is_per_step_attn:
-            num_steps = len(gen_attentions)
-            gen_len = sequences.shape[-1] - input_len
-            if gen_len != num_steps:
-                num_steps = min(gen_len, num_steps)
-            num_layers = len(gen_attentions[0])
-            for layer_id in range(num_layers):
-                step_maps = []
-                for step_id in range(num_steps):
-                    step_attn = gen_attentions[step_id][layer_id][0]  # [heads, q_len, k_len]
-                    k_len = step_attn.shape[-1]
-                    img_mask_step = images_seq_mask[:k_len]
-                    layer_image = step_attn[:, -1, img_mask_step]  # [heads, num_img_tokens]
-                    num_image_tokens = layer_image.shape[-1]
-                    assert num_image_tokens == qwen_h * qwen_w
-                    step_maps.append(layer_image.view(self.num_heads, qwen_h, qwen_w))
-                attentions.append(torch.stack(step_maps, dim=1))  # [heads, steps, H, W]
-            attention_maps = torch.stack(attentions)  # [layers, heads, steps, H, W]
-        else:
-            # Full-matrix per-layer format: gen_attentions[layer] -> [batch, heads, seq_len, seq_len]
-            for attn in gen_attentions:
-                layer_attn = attn[0]
-                layer_image = layer_attn[..., images_seq_mask]
-                num_image_tokens = layer_image.shape[-1]
-                assert num_image_tokens == qwen_h * qwen_w
-                layer_image = layer_image.view(self.num_heads, layer_attn.shape[-2], qwen_h, qwen_w)
-                attentions.append(layer_image[:, generation_slice])
-            attention_maps = torch.stack(attentions)
-
-        # Hidden states: single-pass from generate()
-        if gen_hidden_states is None:
-            raise RuntimeError('generate() did not return hidden_states; cannot run single-pass answer().')
-        weights = self.get_text_layer_weights().view(-1, 1)
-        is_per_step_hs = hasattr(gen_hidden_states, '__len__') and len(gen_hidden_states) > 0 and hasattr(gen_hidden_states[0], '__len__')
-        if is_per_step_hs:
-            num_steps = len(gen_hidden_states)
-            gen_len = sequences.shape[-1] - input_len
-            if gen_len != num_steps:
-                num_steps = min(gen_len, num_steps)
-            step_vecs = []
-            for step_id in range(num_steps):
-                step_layers = gen_hidden_states[step_id]
-                # step_layers may include embedding outputs; always take the last self.num_layers layers.
-                layer_tensors = step_layers[-self.num_layers:]
-                per_layer = []
-                for hs in layer_tensors:
-                    t = hs[0]  # drop batch dim -> [seq, dim] or [1, dim]
-                    if t.dim() == 2:
-                        per_layer.append(t[-1])
-                    elif t.dim() == 1:
-                        per_layer.append(t)
-                    else:
-                        raise RuntimeError(f'Unexpected hidden_state tensor shape: {tuple(t.shape)}')
-                layer_stack = torch.stack(per_layer, dim=0)  # [num_layers, dim]
-                step_vecs.append((layer_stack * weights).sum(0))  # [dim]
-            hidden_states = torch.stack(step_vecs, dim=0)  # [gen_len, dim]
-        else:
-            # Full sequence per-layer format: gen_hidden_states[layer] -> [batch, seq_len, dim]
-            hs_layers = gen_hidden_states[-self.num_layers:]
-            hs_stack = torch.stack([hs[0] for hs in hs_layers])  # [num_layers, seq_len, dim]
-            hs_weighted = (hs_stack * weights.view(-1, 1, 1)).sum(0)  # [seq_len, dim]
-            hidden_states = hs_weighted[generation_slice]  # [gen_len, dim]
-
-        # Final safety trim: keep shapes aligned with output_ids (answer-only, no special tokens).
-        if 'gen_len_effective' in locals():
-            if attention_maps.shape[2] != gen_len_effective:
-                attention_maps = attention_maps[:, :, :gen_len_effective]
-            if hidden_states.shape[0] != gen_len_effective:
-                hidden_states = hidden_states[:gen_len_effective]
-
-        meta_data = self._build_meta_data(image, image_grid_thw)
-        vision_tokens = self._last_vision_tokens
-        grid_snapshot = image_grid_thw.detach().cpu()
-        return dict(output_ids=output_ids,
-                    output_text=output_text,
-                    hidden_states=hidden_states,
-                    attention_maps=attention_maps,
-                    meta_data=meta_data,
-                    vision_tokens=vision_tokens,
-                    image_grid_thw=grid_snapshot)
+        # generate() emits per-step outputs aligned to next-token prediction, not
+        # the finalized answer tokens themselves. Rebuild the cache on the final
+        # answer text so grounding spans line up with the answer token positions.
+        return self.build_answer_cache(
+            image=image,
+            question=question,
+            answer_text=output_text,
+            history=history,
+            output_ids=output_ids,
+        )
 
     @torch.no_grad()
     def ground(self, image, positive_ids, hidden_states, attention_maps, meta_data,

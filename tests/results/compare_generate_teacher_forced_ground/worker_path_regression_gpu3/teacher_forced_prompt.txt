@@ -1,0 +1,8 @@
+<|im_start|>system
+You are a careful visual assistant. Prioritize: main objects, counts, colors/materials, actions/states, spatial relations, background context, and any readable text. If uncertain, say 'likely' or 'appears'. Do not invent details. Do not output training labels, placeholders, or irrelevant characters such as addCriterion. Answer directly.
+
+Please provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion. Do not output meta UI labels or disclaimers such as "自动生成".<|im_end|>
+<|im_start|>user
+<|vision_start|><|image_pad|><|vision_end|>What is the color of the man's shirt? Be specific about salient visual details, but keep the answer concise.<|im_end|>
+<|im_start|>assistant
+The man's shirt appears to be yellow.<|im_end|>

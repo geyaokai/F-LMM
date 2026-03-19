@@ -194,7 +194,54 @@ CUDA_VISIBLE_DEVICES=0 /home/hechen/miniconda3/envs/flmm-qwen/bin/python \
   --topk 8
 ```
 
-### 3.5 Web demo 后端
+### 3.5 spaCy 短语提取环境检查
+
+`pipeline_default_ask()` 里的自动短语提取，第一优先级是 spaCy：
+
+- `extract_phrases_via_model(...)`
+- `_extract_phrases_spacy(...)`
+- `spacy.load("en_core_web_sm")`
+
+所以如果 `flmm-qwen` 环境里没有 `spacy` 或没有 `en_core_web_sm`，就很容易出现：
+
+- `ASK` 正常回答了
+- 但是返回 `phrases=[]`
+- 自动 `ground` 没跑起来
+- 后面只能靠前端手工传 `shirt`、`man`、`yellow shirt` 之类的 phrase 去补 ground
+
+先检查：
+
+```bash
+/home/hechen/miniconda3/envs/flmm-qwen/bin/python -c \
+"import spacy; print(spacy.__version__); spacy.load('en_core_web_sm'); print('en_core_web_sm OK')"
+```
+
+如果这里报：
+
+- `ModuleNotFoundError: No module named 'spacy'`
+- 或 `OSError: [E050] Can't find model 'en_core_web_sm'`
+
+就需要在 `flmm-qwen` 里补装。按当前 `requirements_qwen2_5_vl.txt`，推荐直接执行：
+
+```bash
+/home/hechen/miniconda3/envs/flmm-qwen/bin/pip install \
+  spacy==3.8.7 spacy-legacy==3.0.12 spacy-loggers==1.0.5
+
+/home/hechen/miniconda3/envs/flmm-qwen/bin/python -m spacy download en_core_web_sm
+```
+
+然后再验证一次：
+
+```bash
+/home/hechen/miniconda3/envs/flmm-qwen/bin/python -c \
+"import spacy; nlp = spacy.load('en_core_web_sm'); print('loaded', nlp.meta['name'], nlp.meta['version'])"
+```
+
+如果 worker 已经在跑，补装以后要重启 worker；否则旧进程不会重新加载 spaCy 模型。
+
+如果你是在受限沙箱里执行命令，可能会遇到 conda 环境目录只读；这种情况要在宿主机 shell 里手动执行上面的安装命令。
+
+### 3.6 Web demo 后端
 
 如果你要跑异步后端，需要起两个进程：
 
@@ -207,7 +254,7 @@ CUDA_VISIBLE_DEVICES=0 /home/hechen/miniconda3/envs/flmm-qwen/bin/python \
 - 真正跑模型的是 `scripts/demo/web/backend/task_queue/worker.py`
 - 如果你想把 GPU 压力全放到 worker 上，backend 可以设置 `FLMM_WEB_NO_MODEL=1`
 
-#### 3.5.1 Terminal A: 启动 FastAPI backend
+#### 3.6.1 Terminal A: 启动 FastAPI backend
 tmux new -s fastapi
 ```bash
 cd /home/hechen/gyk/F-LMM
@@ -236,7 +283,7 @@ uvicorn scripts.demo.web.backend.main:app --host 0.0.0.0 --port 9000
 - `/ask`、`/ground` 这类同步接口会不可用或返回 503
 - 正确用法是走 `/tasks`
 
-#### 3.5.2 Terminal B: 启动 worker
+#### 3.6.2 Terminal B: 启动 worker
 tmux new -s worker
 ```bash
 cd /home/hechen/gyk/F-LMM
@@ -263,7 +310,7 @@ python -m scripts.demo.web.backend.task_queue.worker \
 
 那就会出现“后端收到了任务，但 worker 不处理”的假死现象。
 
-#### 3.5.3 为什么要分成 backend 和 worker
+#### 3.6.3 为什么要分成 backend 和 worker
 
 因为 `ASK / GROUND / TOKEN_TO_REGION / REGION_TO_TOKEN` 都比较重：
 
@@ -288,7 +335,7 @@ frontend / client
 - backend 可以不占 GPU
 - 后续更容易加多 worker 或迁移机器
 
-#### 3.5.4 backend 现在支持哪些任务
+#### 3.6.4 backend 现在支持哪些任务
 
 worker 统一处理下面四类：
 
@@ -306,7 +353,7 @@ worker 统一处理下面四类：
 
 所以 web backend 不是另一套逻辑，只是把本地 demo 逻辑服务化了。
 
-#### 3.5.5 backend 结果写到哪里
+#### 3.6.5 backend 结果写到哪里
 
 默认在：
 
@@ -331,7 +378,7 @@ results/
 
 所以你在 web demo 里看到的图，本质上就是 worker 写到这些目录里的文件。
 
-#### 3.5.6 什么时候还需要看 backend 自己的 README
+#### 3.6.6 什么时候还需要看 backend 自己的 README
 
 如果你要看更细的接口细节，再去看：
 
@@ -346,7 +393,7 @@ results/
 
 backend README 保留作更细的接口参考。
 
-#### 3.5.7 一条完整异步请求链是怎么走的
+#### 3.6.7 一条完整异步请求链是怎么走的
 
 这一段是最重要的后端逻辑图。
 
@@ -380,7 +427,7 @@ frontend
 -> frontend
 ```
 
-#### 3.5.8 最小异步调用示例
+#### 3.6.8 最小异步调用示例
 
 ##### 第一步：创建 session
 
@@ -446,7 +493,7 @@ curl http://localhost:9000/tasks/TASK_ID
 - `status = FAILED`
 - `task.error`
 
-#### 3.5.9 `ASK` 任务入队后，backend 具体做了什么
+#### 3.6.9 `ASK` 任务入队后，backend 具体做了什么
 
 入口在：
 
@@ -464,7 +511,7 @@ curl http://localhost:9000/tasks/TASK_ID
 
 - 你在前面已经 `load_image` 过的话，后面发 `ASK` 通常不需要再手动传 `image_path`
 
-#### 3.5.10 SQLite queue 里到底存了什么
+#### 3.6.10 SQLite queue 里到底存了什么
 
 SQLite 表在：
 
@@ -506,7 +553,7 @@ PENDING -> RUNNING -> FAILED
 
 所以同一轮问题重复入队 ASK，会覆盖旧 ASK，而不是一直堆积。
 
-#### 3.5.11 worker 拿到任务后怎么分发
+#### 3.6.11 worker 拿到任务后怎么分发
 
 入口在：
 
@@ -528,7 +575,7 @@ worker 主循环做的事很固定：
 
 所以从架构上看，worker 只是一个统一调度层，真正的业务逻辑仍然在原来的 demo 代码里。
 
-#### 3.5.12 `ASK` 在 worker 里最后会跑到哪里
+#### 3.6.12 `ASK` 在 worker 里最后会跑到哪里
 
 最终还是会跑到：
 
@@ -553,7 +600,7 @@ model.answer()
 -> 返回 answer / phrases / verification
 ```
 
-#### 3.5.13 `TOKEN_TO_REGION` / `REGION_TO_TOKEN` 在 worker 里怎么落盘
+#### 3.6.13 `TOKEN_TO_REGION` / `REGION_TO_TOKEN` 在 worker 里怎么落盘
 
 这两类任务也是 worker 里统一处理的。
 
@@ -574,7 +621,7 @@ model.answer()
 
 所以你在前端看到的解释图，本质上都是 worker 写出的静态文件。
 
-#### 3.5.14 同步接口和异步接口的边界
+#### 3.6.14 同步接口和异步接口的边界
 
 backend 其实同时保留了两套调用方式：
 
@@ -742,6 +789,8 @@ answer
    - 把 answer 文本和 answer token 对齐
 3. `extract_phrases_via_model(...)`
    - 从 answer 文本里提 noun phrase
+   - 优先走 spaCy 的 `en_core_web_sm`
+   - spaCy 不可用时，再退化到 LLM 抽取和规则 fallback
 4. `build_phrase_candidates(...)`
    - 给每个 phrase 补上 `char_span` 和 `token_span`
 5. `perform_ground(...)`
@@ -761,6 +810,15 @@ answer
 所以如果自动抽出来的是 `dresser`，那么 ROI 框更可能围绕 `dresser` 证据，而不是直接围绕 `shampoo` 这个 question 词。
 
 这也正是你前面观察到的现象来源。
+
+这里还有一个很常见的工程性故障：
+
+- 如果 spaCy 或 `en_core_web_sm` 没装好，`ASK` 可能直接出现 `phrases=[]`
+- 这时候不是 grounding 模块先坏了，而是 phrase extract 这一步先掉了
+- 排查时先看 worker 日志里有没有：
+  - `spaCy import unavailable`
+  - `spaCy model 'en_core_web_sm' unavailable`
+- 修法见前面的“3.5 spaCy 短语提取环境检查”
 
 ## 6. `FrozenQwen.answer()` 到底缓存了什么
 

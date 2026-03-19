@@ -26,6 +26,7 @@ dataclass 定义
 """
 
 import argparse
+from collections import deque
 import json
 import os
 import re
@@ -57,9 +58,11 @@ try:
     import spacy
 
     _spacy_nlp = None
+    _spacy_warned = False
 except ImportError:
     spacy = None
     _spacy_nlp = None
+    _spacy_warned = False
 
 # import pdb;pdb.set_trace()
 from scripts.demo.checkpoint_utils import guess_load_checkpoint  # noqa: E402
@@ -69,6 +72,59 @@ from scripts.demo.web.backend.task_queue.paths import (  # noqa: E402
     ATTN_KIND_TOKEN_TO_REGION,
     SessionPaths,
 )
+
+_PHRASE_BREAK_WORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "been",
+    "beside",
+    "by",
+    "for",
+    "from",
+    "has",
+    "have",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "near",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "their",
+    "there",
+    "they",
+    "this",
+    "to",
+    "was",
+    "were",
+    "which",
+    "while",
+    "with",
+    "wearing",
+}
+
+_PHRASE_LEADING_WORDS = {
+    "a",
+    "an",
+    "the",
+    "this",
+    "that",
+    "these",
+    "those",
+    "his",
+    "her",
+    "their",
+    "its",
+}
 
 
 @dataclass
@@ -425,14 +481,20 @@ def parse_ask_command(arg_str: str) -> AskCommand:
 
 
 def _get_spacy():
-    global _spacy_nlp
+    global _spacy_nlp, _spacy_warned
     if _spacy_nlp is not None:
         return _spacy_nlp
     if spacy is None:
+        if not _spacy_warned:
+            print("[Debug] spaCy import unavailable; phrase extraction will use model/regex fallback.")
+            _spacy_warned = True
         return None
     try:
         _spacy_nlp = spacy.load("en_core_web_sm")
     except Exception:
+        if not _spacy_warned:
+            print("[Debug] spaCy model 'en_core_web_sm' unavailable; phrase extraction will use model/regex fallback.")
+            _spacy_warned = True
         _spacy_nlp = None
     return _spacy_nlp
 
@@ -466,6 +528,66 @@ def _extract_phrases_spacy(
     for token in doc:
         if token.pos_ in {"NOUN", "PROPN"} and not token.is_stop and token.is_alpha:
             add_phrase(token.text, token.idx, token.idx + len(token.text))
+
+    return phrases[:limit]
+
+
+def _extract_phrases_regex(
+    answer_text: str, limit: int
+) -> List[Tuple[str, Tuple[int, int]]]:
+    token_matches = list(re.finditer(r"[A-Za-z]+(?:['-][A-Za-z]+)?", answer_text))
+    if not token_matches:
+        return []
+
+    chunks: List[List[re.Match[str]]] = []
+    current: List[re.Match[str]] = []
+    for match in token_matches:
+        word = match.group(0).lower()
+        if word in _PHRASE_BREAK_WORDS:
+            if current:
+                chunks.append(current)
+                current = []
+            continue
+        current.append(match)
+    if current:
+        chunks.append(current)
+
+    phrases: List[Tuple[str, Tuple[int, int]]] = []
+    seen: set[str] = set()
+
+    def add_phrase(start_idx: int, end_idx: int, chunk: List[re.Match[str]]) -> None:
+        if start_idx < 0 or end_idx >= len(chunk) or start_idx > end_idx:
+            return
+        start = chunk[start_idx].start()
+        end = chunk[end_idx].end()
+        text = answer_text[start:end].strip()
+        if not text:
+            return
+        key = text.lower()
+        if key in seen:
+            return
+        word_count = len(text.split())
+        if word_count == 0 or word_count > 3:
+            return
+        seen.add(key)
+        phrases.append((text, (start, end)))
+
+    for chunk in chunks:
+        start_idx = 0
+        while start_idx < len(chunk):
+            if chunk[start_idx].group(0).lower() in _PHRASE_LEADING_WORDS:
+                start_idx += 1
+            else:
+                break
+        if start_idx >= len(chunk):
+            continue
+        trimmed = chunk[start_idx:]
+        add_phrase(0, len(trimmed) - 1, trimmed)
+        if len(trimmed) >= 2:
+            add_phrase(len(trimmed) - 2, len(trimmed) - 1, trimmed)
+        add_phrase(len(trimmed) - 1, len(trimmed) - 1, trimmed)
+        if len(phrases) >= limit:
+            break
 
     return phrases[:limit]
 
@@ -668,7 +790,16 @@ def extract_phrases_via_model(
         seen.add(key)
         if len(dedup) >= limit:
             break
-    return dedup
+    if dedup:
+        return dedup
+
+    regex_candidates = _extract_phrases_regex(answer_text, limit=limit * 3)
+    if regex_candidates:
+        print(f"[Debug] Regex fallback phrases: {[p[0] for p in regex_candidates]}")
+        return _rerank_phrases_with_model(
+            model, question, answer_text, regex_candidates, max_tokens, limit
+        )
+    return []
 
 
 def build_offsets(tokenizer, answer_text: str) -> List[Tuple[int, int]]:
@@ -977,6 +1108,46 @@ def mask_to_box(mask: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
     return x0, y0, x1 + 1, y1 + 1
 
 
+def dominant_connected_component(mask: np.ndarray) -> np.ndarray:
+    binary = np.asarray(mask, dtype=bool)
+    if binary.ndim != 2 or not binary.any():
+        return binary
+
+    height, width = binary.shape
+    visited = np.zeros_like(binary, dtype=bool)
+    best_coords: List[Tuple[int, int]] = []
+
+    ys, xs = np.where(binary)
+    for start_y, start_x in zip(ys.tolist(), xs.tolist()):
+        if visited[start_y, start_x]:
+            continue
+        queue: deque[Tuple[int, int]] = deque([(start_y, start_x)])
+        visited[start_y, start_x] = True
+        coords: List[Tuple[int, int]] = []
+        while queue:
+            y, x = queue.pop()
+            coords.append((y, x))
+            y0 = max(0, y - 1)
+            y1 = min(height, y + 2)
+            x0 = max(0, x - 1)
+            x1 = min(width, x + 2)
+            for ny in range(y0, y1):
+                for nx in range(x0, x1):
+                    if visited[ny, nx] or not binary[ny, nx]:
+                        continue
+                    visited[ny, nx] = True
+                    queue.append((ny, nx))
+        if len(coords) > len(best_coords):
+            best_coords = coords
+
+    if not best_coords:
+        return binary
+    component = np.zeros_like(binary, dtype=bool)
+    ys_best, xs_best = zip(*best_coords)
+    component[np.array(ys_best), np.array(xs_best)] = True
+    return component
+
+
 def blend_mask(
     image_np: np.ndarray, mask: np.ndarray, color: Tuple[int, int, int]
 ) -> np.ndarray:
@@ -999,6 +1170,7 @@ def save_ground_outputs(
     records: List[GroundRecord] = []
     for idx, mask in enumerate(masks):
         binary = mask > 0
+        primary_binary = dominant_connected_component(binary)
         mask_img = Image.fromarray((binary * 255).astype(np.uint8))
         mask_path = run_dir / f"mask_{idx:02d}.png"
         mask_img.save(mask_path)
@@ -1006,7 +1178,9 @@ def save_ground_outputs(
         overlay_img = Image.fromarray(overlay_np.astype(np.uint8))
         overlay_path = run_dir / f"overlay_{idx:02d}.png"
         overlay_img.save(overlay_path)
-        bbox = mask_to_box(binary)
+        bbox = mask_to_box(primary_binary)
+        if bbox is None:
+            bbox = mask_to_box(binary)
         roi_path = None
         roi_image = None
         if bbox:

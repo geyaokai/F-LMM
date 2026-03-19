@@ -1,0 +1,119 @@
+{
+  "answer_text": "likely on dresser",
+  "bbox": [
+    0.0,
+    0.0,
+    633.0,
+    479.0
+  ],
+  "bbox_source": "record_index",
+  "source_phrase": "dresser",
+  "top_tokens": [
+    {
+      "index": 2,
+      "text": " dresser",
+      "char_span": [
+        9,
+        17
+      ],
+      "raw_score": 0.0004645349981728941,
+      "score": 1.0
+    },
+    {
+      "index": 1,
+      "text": " on",
+      "char_span": [
+        6,
+        9
+      ],
+      "raw_score": 0.00019084954692516476,
+      "score": 0.03889409825205803
+    },
+    {
+      "index": 0,
+      "text": "likely",
+      "char_span": [
+        0,
+        6
+      ],
+      "raw_score": 0.00017977402603719383,
+      "score": 0.0
+    }
+  ],
+  "top_phrases": [
+    {
+      "index": 0,
+      "text": " dresser",
+      "char_span": [
+        9,
+        17
+      ],
+      "token_span": [
+        2,
+        3
+      ],
+      "score": 1.0,
+      "score_max": 1.0
+    },
+    {
+      "index": 1,
+      "text": " on",
+      "char_span": [
+        6,
+        9
+      ],
+      "token_span": [
+        1,
+        2
+      ],
+      "score": 0.03889409825205803,
+      "score_max": 0.03889409825205803
+    },
+    {
+      "index": 2,
+      "text": "likely",
+      "char_span": [
+        0,
+        6
+      ],
+      "token_span": [
+        0,
+        1
+      ],
+      "score": 0.0,
+      "score_max": 0.0
+    }
+  ],
+  "token_scores": [
+    {
+      "index": 0,
+      "text": "likely",
+      "char_span": [
+        0,
+        6
+      ],
+      "raw_score": 0.00017977402603719383,
+      "score": 0.0
+    },
+    {
+      "index": 1,
+      "text": " on",
+      "char_span": [
+        6,
+        9
+      ],
+      "raw_score": 0.00019084954692516476,
+      "score": 0.03889409825205803
+    },
+    {
+      "index": 2,
+      "text": " dresser",
+      "char_span": [
+        9,
+        17
+      ],
+      "raw_score": 0.0004645349981728941,
+      "score": 1.0
+    }
+  ]
+}

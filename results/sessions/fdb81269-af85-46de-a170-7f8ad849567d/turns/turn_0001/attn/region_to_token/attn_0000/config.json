@@ -1,0 +1,190 @@
+{
+  "task_id": 67,
+  "session_id": "fdb81269-af85-46de-a170-7f8ad849567d",
+  "turn_idx": 1,
+  "attn_id": 0,
+  "type": "REGION_TO_TOKEN",
+  "input": {
+    "prompt": "where is the shampoo?",
+    "layer": "mean",
+    "head": "mean",
+    "reduction": "mean",
+    "topk": 8,
+    "record_index": 0
+  },
+  "meta": {
+    "layer": "mean",
+    "head": "mean",
+    "reduction": "mean",
+    "normalize": "minmax",
+    "score_axis": "generated_token_index",
+    "analysis_type": "region_to_token",
+    "bbox": [
+      0.0,
+      0.0,
+      633.0,
+      479.0
+    ],
+    "bbox_format": "xyxy",
+    "image_size": {
+      "width": 640,
+      "height": 483
+    },
+    "grid_shape": {
+      "height": 17,
+      "width": 23
+    },
+    "grid_bbox": [
+      0,
+      0,
+      23,
+      17
+    ],
+    "region_cell_count": 391,
+    "bbox_source": "record_index",
+    "source_phrase": "dresser",
+    "topk": 8,
+    "layer_summary": [
+      {
+        "layer": 0,
+        "max_token_index": 0,
+        "max_token_score": 0.0001386644144076854
+      },
+      {
+        "layer": 1,
+        "max_token_index": 0,
+        "max_token_score": 0.0001844256476033479
+      },
+      {
+        "layer": 2,
+        "max_token_index": 0,
+        "max_token_score": 0.0001766822679201141
+      },
+      {
+        "layer": 3,
+        "max_token_index": 2,
+        "max_token_score": 0.00015184447693172842
+      },
+      {
+        "layer": 4,
+        "max_token_index": 0,
+        "max_token_score": 0.00013474781007971615
+      },
+      {
+        "layer": 5,
+        "max_token_index": 2,
+        "max_token_score": 0.00016475212760269642
+      },
+      {
+        "layer": 6,
+        "max_token_index": 0,
+        "max_token_score": 6.927761569386348e-05
+      },
+      {
+        "layer": 7,
+        "max_token_index": 0,
+        "max_token_score": 0.00032517124782316387
+      },
+      {
+        "layer": 8,
+        "max_token_index": 2,
+        "max_token_score": 0.0001843450590968132
+      },
+      {
+        "layer": 9,
+        "max_token_index": 2,
+        "max_token_score": 0.00029024091782048345
+      },
+      {
+        "layer": 10,
+        "max_token_index": 2,
+        "max_token_score": 0.00021685686078853905
+      },
+      {
+        "layer": 11,
+        "max_token_index": 2,
+        "max_token_score": 0.000328604452079162
+      },
+      {
+        "layer": 12,
+        "max_token_index": 2,
+        "max_token_score": 0.0002988740452565253
+      },
+      {
+        "layer": 13,
+        "max_token_index": 2,
+        "max_token_score": 0.00026443751994520426
+      },
+      {
+        "layer": 14,
+        "max_token_index": 2,
+        "max_token_score": 0.0006022844463586807
+      },
+      {
+        "layer": 15,
+        "max_token_index": 2,
+        "max_token_score": 0.0003868960775434971
+      },
+      {
+        "layer": 16,
+        "max_token_index": 2,
+        "max_token_score": 0.0008378744823858142
+      },
+      {
+        "layer": 17,
+        "max_token_index": 2,
+        "max_token_score": 0.0003851194051094353
+      },
+      {
+        "layer": 18,
+        "max_token_index": 2,
+        "max_token_score": 0.00042962253792211413
+      },
+      {
+        "layer": 19,
+        "max_token_index": 2,
+        "max_token_score": 0.0008497199742123485
+      },
+      {
+        "layer": 20,
+        "max_token_index": 2,
+        "max_token_score": 0.0007178024970926344
+      },
+      {
+        "layer": 21,
+        "max_token_index": 2,
+        "max_token_score": 0.0008952204370871186
+      },
+      {
+        "layer": 22,
+        "max_token_index": 2,
+        "max_token_score": 0.0012119190068915486
+      },
+      {
+        "layer": 23,
+        "max_token_index": 2,
+        "max_token_score": 0.0006400855490937829
+      },
+      {
+        "layer": 24,
+        "max_token_index": 2,
+        "max_token_score": 0.0008198505383916199
+      },
+      {
+        "layer": 25,
+        "max_token_index": 2,
+        "max_token_score": 0.000706957362126559
+      },
+      {
+        "layer": 26,
+        "max_token_index": 2,
+        "max_token_score": 0.001001979922875762
+      },
+      {
+        "layer": 27,
+        "max_token_index": 2,
+        "max_token_score": 0.001000416581518948
+      }
+    ]
+  }
+}

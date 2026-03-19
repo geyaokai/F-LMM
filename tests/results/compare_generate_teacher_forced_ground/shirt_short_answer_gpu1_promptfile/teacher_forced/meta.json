@@ -1,0 +1,41 @@
+{
+  "mode": "teacher_forced",
+  "phrase": "shirt",
+  "char_span": [
+    10,
+    15
+  ],
+  "token_span": [
+    3,
+    4
+  ],
+  "coarse_bbox": [
+    153,
+    40,
+    215,
+    126
+  ],
+  "final_bbox": [
+    160,
+    32,
+    234,
+    114
+  ],
+  "attention_meta": {
+    "grid_h": 9,
+    "grid_w": 13,
+    "layer": "mean",
+    "head": "mean",
+    "reduction": "mean",
+    "normalize": "minmax",
+    "token_span": {
+      "start": 3,
+      "end": 4,
+      "right_open": true
+    },
+    "span_type": "token_index",
+    "analysis_type": "token_to_region"
+  },
+  "answer_text": "The man's shirt is yellow.",
+  "use_sam": true
+}

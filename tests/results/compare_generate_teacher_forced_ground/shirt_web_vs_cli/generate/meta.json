@@ -1,0 +1,41 @@
+{
+  "mode": "generate",
+  "phrase": "shirt",
+  "char_span": [
+    42,
+    47
+  ],
+  "token_span": [
+    9,
+    10
+  ],
+  "coarse_bbox": [
+    148,
+    29,
+    230,
+    114
+  ],
+  "final_bbox": [
+    160,
+    32,
+    234,
+    112
+  ],
+  "attention_meta": {
+    "grid_h": 9,
+    "grid_w": 13,
+    "layer": "mean",
+    "head": "mean",
+    "reduction": "mean",
+    "normalize": "minmax",
+    "token_span": {
+      "start": 9,
+      "end": 10,
+      "right_open": true
+    },
+    "span_type": "token_index",
+    "analysis_type": "token_to_region"
+  },
+  "answer_text": "The man in the image is wearing an orange shirt.",
+  "use_sam": true
+}
