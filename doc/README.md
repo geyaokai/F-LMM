@@ -81,11 +81,11 @@
 | 文档 | 说明 | 关键词 |
 |------|------|--------|
 | [`QWEN_MODEL_ADAPTATION.md`](./04-qwen-adaptation/QWEN_MODEL_ADAPTATION.md) | Qwen 模型适配指南 | 接口、差异、实现 |
-| [`TOKEN_ENCODING_FIX_CN.md`](./04-qwen-adaptation/TOKEN_ENCODING_FIX_CN.md) | Token 编码问题修复 | 图像 token、编码 |
+| [`RESAMPLE_VISUAL_COT.md`](./04-qwen-adaptation/RESAMPLE_VISUAL_COT.md) | ROI / Visual CoT 重推理实现 | ROI、重推理、纠错 |
 
 **推荐阅读顺序**：
 1. QWEN_MODEL_ADAPTATION.md - 适配总览
-2. TOKEN_ENCODING_FIX_CN.md - 常见问题
+2. RESAMPLE_VISUAL_COT.md - 理解 ROI 重推理
 
 ---
 
@@ -102,6 +102,44 @@
 **常见问题快速链接**：
 - 图像 token 数量不匹配警告 → 查看本次对话记录
 - image_grid_thw 相关错误 → 查看 tests/README.md
+
+---
+
+### 🧭 [06-explainable-framework](./06-explainable-framework/) - 可解释框架推进
+
+**面向课题推进的规划与实验入口**
+
+| 文档 | 说明 | 关键词 |
+|------|------|--------|
+| [`README.md`](./06-explainable-framework/README.md) | 本专题入口与常用命令 | demo、命令、导航 |
+| [`DEMO_USAGE_AND_CODE_GUIDE.md`](./06-explainable-framework/DEMO_USAGE_AND_CODE_GUIDE.md) | demo 使用说明与代码主逻辑 | interact、stability、worker |
+| [`ATTENTION_DIRECTIONS.md`](./06-explainable-framework/ATTENTION_DIRECTIONS.md) | attention 方向与 `images_seq_mask` 说明 | token-to-region、region-to-token |
+| [`ROADMAP.md`](./06-explainable-framework/ROADMAP.md) | 三层技术路线的工程化推进计划 | grounding、解释、纠错、VCD |
+| [`STABILITY_MANIFEST_GUIDE.md`](./06-explainable-framework/STABILITY_MANIFEST_GUIDE.md) | 第一阶段样例集制定指南 | manifest、样例、失败类型 |
+
+**推荐阅读顺序**：
+1. README.md - 先看命令入口和文档导航
+2. DEMO_USAGE_AND_CODE_GUIDE.md - 再看 demo 怎么跑、代码怎么走
+3. ATTENTION_DIRECTIONS.md - 再看 attention 的方向解释
+4. ROADMAP.md - 最后看推进顺序
+5. STABILITY_MANIFEST_GUIDE.md - 按统一格式整理固定样例
+
+---
+
+### 🌐 [webdemo](./webdemo/) - Web Demo 与前后端对接
+
+**面向后端启动、前端接手与 explainable UI 对接**
+
+| 文档 | 说明 | 关键词 |
+|------|------|--------|
+| [`README.md`](./webdemo/README.md) | Web demo 端到端逻辑说明 | session、backend、frontend、模型复用 |
+| [`FRONTEND_AGENT_HANDOFF.md`](./webdemo/FRONTEND_AGENT_HANDOFF.md) | 给前端开发者 / agent 的交接文档 | API、tasks、静态资源、上线边界 |
+| [`../scripts/demo/web/backend/README.md`](../scripts/demo/web/backend/README.md) | 后端与 worker 启动命令 | uvicorn、worker、环境变量 |
+
+**推荐阅读顺序**：
+1. FRONTEND_AGENT_HANDOFF.md - 先明确前端应该接什么
+2. webdemo/README.md - 再看后端和模型链路
+3. scripts/demo/web/backend/README.md - 最后按命令启动服务
 
 ---
 
@@ -154,6 +192,20 @@
 1. [`02-training/RUNNER_AND_TRAINING.md`](./02-training/RUNNER_AND_TRAINING.md)
 2. [`02-training/TRAINING_CONCEPTS_AND_RESUME.md`](./02-training/TRAINING_CONCEPTS_AND_RESUME.md)
 
+### 场景 7：我要推进“可解释 + 纠错”课题
+👉 查看：
+1. [`06-explainable-framework/README.md`](./06-explainable-framework/README.md)
+2. [`06-explainable-framework/DEMO_USAGE_AND_CODE_GUIDE.md`](./06-explainable-framework/DEMO_USAGE_AND_CODE_GUIDE.md)
+3. [`06-explainable-framework/ROADMAP.md`](./06-explainable-framework/ROADMAP.md)
+4. `scripts/demo/stability_eval.py` - 第一阶段稳定性基线脚本
+
+### 场景 8：我要接前端、启动后端、做 explainable Web UI
+👉 查看：
+1. [`webdemo/FRONTEND_AGENT_HANDOFF.md`](./webdemo/FRONTEND_AGENT_HANDOFF.md)
+2. [`webdemo/README.md`](./webdemo/README.md)
+3. [`../scripts/demo/web/backend/README.md`](../scripts/demo/web/backend/README.md)
+4. [`06-explainable-framework/DEMO_USAGE_AND_CODE_GUIDE.md`](./06-explainable-framework/DEMO_USAGE_AND_CODE_GUIDE.md)
+
 ---
 
 ## 📊 文档概览
@@ -182,10 +234,20 @@ doc/
 │
 ├── 04-qwen-adaptation/                 # Qwen 适配
 │   ├── QWEN_MODEL_ADAPTATION.md       # 适配指南
-│   └── TOKEN_ENCODING_FIX_CN.md       # Token 修复
+│   └── RESAMPLE_VISUAL_COT.md         # ROI / Visual CoT 重推理
 │
 ├── 05-troubleshooting/                 # 故障排除
 │   └── README.md                      # 常见问题
+│
+├── 06-explainable-framework/           # 可解释框架推进
+│   ├── README.md                      # 本专题入口
+│   ├── DEMO_USAGE_AND_CODE_GUIDE.md   # demo 使用与代码主逻辑
+│   ├── ATTENTION_DIRECTIONS.md        # attention 方向说明
+│   └── ROADMAP.md                     # 研究路线与实施计划
+│
+├── webdemo/                            # Web demo 与前后端对接
+│   ├── README.md                      # 端到端逻辑说明
+│   └── FRONTEND_AGENT_HANDOFF.md      # 给前端开发者的交接文档
 │
 └── archive/                            # 历史文档
     └── (从 tests/ 移动过来的修复记录等)
@@ -232,5 +294,3 @@ doc/
 
 **最后更新**：2025-11-09  
 **维护者**：AI Assistant & Contributors
-
-

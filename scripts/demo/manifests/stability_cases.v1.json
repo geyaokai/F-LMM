@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "description": "Merged v1 stability manifest: repo starter cases plus the custom shampoo-room case. Put your shampoo image at data/custom/shampoo_room.png or update that path before running.",
+  "samples": [
+    {
+      "id": "custom_shampoo_room_001",
+      "image_path": "data/custom/shampoo_room.png",
+      "question": "Where is the shampoo?",
+      "answer_contains": ["dresser"],
+      "answer_not_contains": ["bookshelf", "bed"],
+      "expected_bbox": [112, 165, 150, 247],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "notes": "Small bottle on the left dresser, near the round mirror. Good for testing small-object grounding."
+    },
+    {
+      "id": "repo_gqa_window_001",
+      "image_path": "data/cot/gqa/2316539.jpg",
+      "question": "What are the tree branches in front of?",
+      "answer_contains": ["window"],
+      "expected_bbox": [217, 343, 242, 393],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "notes": "Spatial relation case from GQA. Small target region."
+    },
+    {
+      "id": "repo_gqa_lettuce_002",
+      "image_path": "data/cot/gqa/2414389.jpg",
+      "question": "What vegetable is above the cooked carrot in the salad?",
+      "answer_contains": ["lettuce"],
+      "answer_not_contains": ["carrot"],
+      "expected_bbox": [227, 68, 391, 173],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "notes": "Fine-grained food recognition with a relation phrase."
+    },
+    {
+      "id": "repo_openimages_glasses_003",
+      "image_path": "data/cot/openimages/2e90902eaa726aac.jpg",
+      "question": "What is the standing woman wearing?",
+      "answer_contains": ["glasses"],
+      "answer_not_contains": ["goggles"],
+      "expected_bbox": [575, 321, 733, 382],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "notes": "Accessory grounding on a crowded indoor scene."
+    },
+    {
+      "id": "repo_flickr_ball_004",
+      "image_path": "data/cot/flickr30k/2472678549.jpg",
+      "question": "Can you tell me what the boy is holding in his right hand while standing in the bathroom?",
+      "answer_contains": ["ball"],
+      "answer_not_contains": ["toothbrush"],
+      "expected_bbox": [287, 62, 334, 114],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "notes": "Small object under action and body-part constraints."
+    },
+    {
+      "id": "repo_textvqa_aged_005",
+      "image_path": "data/cot/textvqa/831bcec304a17054.jpg",
+      "question": "How long has the drink on the right been aged?",
+      "answer_contains": ["10"],
+      "answer_not_contains": ["12"],
+      "expected_bbox": [646, 522, 711, 574],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "notes": "OCR-like small text region on a bottle label."
+    },
+    {
+      "id": "repo_textcap_lancome_006",
+      "image_path": "data/cot/textvqa/de16e970e8c0adbe.jpg",
+      "question": "What brand of perfume is displayed in front of the yellow box?",
+      "answer_contains": ["lancome"],
+      "answer_not_contains": ["dolce"],
+      "expected_bbox": [227, 501, 423, 549],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "notes": "Object relation plus text recognition. Good small-region stress case."
+    }
+  ]
+}

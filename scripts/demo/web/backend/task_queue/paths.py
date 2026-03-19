@@ -7,6 +7,31 @@ from pathlib import Path
 from typing import Iterable
 
 
+ATTN_KIND_TOKEN_TO_REGION = "token_to_region"
+ATTN_KIND_REGION_TO_TOKEN = "region_to_token"
+
+TASK_TYPE_TOKEN_TO_REGION = "TOKEN_TO_REGION"
+TASK_TYPE_REGION_TO_TOKEN = "REGION_TO_TOKEN"
+
+
+def canonical_attn_kind(kind: str) -> str:
+    normalized = (kind or "").strip().lower()
+    if normalized == ATTN_KIND_TOKEN_TO_REGION:
+        return ATTN_KIND_TOKEN_TO_REGION
+    if normalized == ATTN_KIND_REGION_TO_TOKEN:
+        return ATTN_KIND_REGION_TO_TOKEN
+    raise ValueError("kind must be 'token_to_region' or 'region_to_token'")
+
+
+def canonical_task_type(task_type: str) -> str:
+    normalized = (task_type or "").strip().upper()
+    if normalized == TASK_TYPE_TOKEN_TO_REGION:
+        return TASK_TYPE_TOKEN_TO_REGION
+    if normalized == TASK_TYPE_REGION_TO_TOKEN:
+        return TASK_TYPE_REGION_TO_TOKEN
+    return normalized
+
+
 @dataclass
 class SessionPaths:
     root: Path
@@ -31,9 +56,8 @@ class SessionPaths:
         return self.turn_dir(turn_idx) / "ground" / f"ground_{ground_id:04d}"
 
     def attn_dir(self, turn_idx: int, kind: str, attn_id: int) -> Path:
-        if kind not in {"i2t", "t2i"}:
-            raise ValueError("kind must be 'i2t' or 't2i'")
-        return self.turn_dir(turn_idx) / "attn" / kind / f"attn_{attn_id:04d}"
+        canonical = canonical_attn_kind(kind)
+        return self.turn_dir(turn_idx) / "attn" / canonical / f"attn_{attn_id:04d}"
 
     def image_path(self, image_id: str) -> Path:
         return self.images_dir / image_id

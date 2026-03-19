@@ -1,0 +1,172 @@
+{
+  "layer": "mean",
+  "head": "mean",
+  "reduction": "mean",
+  "normalize": "minmax",
+  "score_axis": "generated_token_index",
+  "bbox": [
+    112.0,
+    165.0,
+    150.0,
+    247.0
+  ],
+  "bbox_format": "xyxy",
+  "image_size": {
+    "width": 640,
+    "height": 483
+  },
+  "grid_shape": {
+    "height": 17,
+    "width": 23
+  },
+  "grid_bbox": [
+    4,
+    5,
+    6,
+    9
+  ],
+  "region_cell_count": 8,
+  "topk": 8,
+  "layer_summary": [
+    {
+      "layer": 0,
+      "max_token_index": 0,
+      "max_token_score": 0.00022182284737937152
+    },
+    {
+      "layer": 1,
+      "max_token_index": 0,
+      "max_token_score": 0.0001327118370682001
+    },
+    {
+      "layer": 2,
+      "max_token_index": 1,
+      "max_token_score": 0.00019209938182029873
+    },
+    {
+      "layer": 3,
+      "max_token_index": 8,
+      "max_token_score": 0.00017203432798851281
+    },
+    {
+      "layer": 4,
+      "max_token_index": 8,
+      "max_token_score": 0.00028938334435224533
+    },
+    {
+      "layer": 5,
+      "max_token_index": 8,
+      "max_token_score": 0.0003281074168626219
+    },
+    {
+      "layer": 6,
+      "max_token_index": 8,
+      "max_token_score": 8.546438039047644e-05
+    },
+    {
+      "layer": 7,
+      "max_token_index": 8,
+      "max_token_score": 0.0002370853180764243
+    },
+    {
+      "layer": 8,
+      "max_token_index": 8,
+      "max_token_score": 0.0003654738829936832
+    },
+    {
+      "layer": 9,
+      "max_token_index": 3,
+      "max_token_score": 0.00035658074193634093
+    },
+    {
+      "layer": 10,
+      "max_token_index": 8,
+      "max_token_score": 0.00015822648128960282
+    },
+    {
+      "layer": 11,
+      "max_token_index": 3,
+      "max_token_score": 0.00023378364858217537
+    },
+    {
+      "layer": 12,
+      "max_token_index": 8,
+      "max_token_score": 0.0006516421562992036
+    },
+    {
+      "layer": 13,
+      "max_token_index": 3,
+      "max_token_score": 0.0004733858513645828
+    },
+    {
+      "layer": 14,
+      "max_token_index": 3,
+      "max_token_score": 0.0005447037401609123
+    },
+    {
+      "layer": 15,
+      "max_token_index": 8,
+      "max_token_score": 0.00026092579355463386
+    },
+    {
+      "layer": 16,
+      "max_token_index": 3,
+      "max_token_score": 0.0004966242704540491
+    },
+    {
+      "layer": 17,
+      "max_token_index": 3,
+      "max_token_score": 0.000573250581510365
+    },
+    {
+      "layer": 18,
+      "max_token_index": 3,
+      "max_token_score": 0.0006132916314527392
+    },
+    {
+      "layer": 19,
+      "max_token_index": 3,
+      "max_token_score": 0.00034920041798613966
+    },
+    {
+      "layer": 20,
+      "max_token_index": 5,
+      "max_token_score": 0.0002913837961386889
+    },
+    {
+      "layer": 21,
+      "max_token_index": 1,
+      "max_token_score": 0.00045512919314205647
+    },
+    {
+      "layer": 22,
+      "max_token_index": 1,
+      "max_token_score": 0.0005195951089262962
+    },
+    {
+      "layer": 23,
+      "max_token_index": 1,
+      "max_token_score": 0.0002739220217335969
+    },
+    {
+      "layer": 24,
+      "max_token_index": 1,
+      "max_token_score": 0.0006940684979781508
+    },
+    {
+      "layer": 25,
+      "max_token_index": 1,
+      "max_token_score": 0.00030732806771993637
+    },
+    {
+      "layer": 26,
+      "max_token_index": 1,
+      "max_token_score": 0.0007718846318311989
+    },
+    {
+      "layer": 27,
+      "max_token_index": 1,
+      "max_token_score": 0.001028762781061232
+    }
+  ]
+}

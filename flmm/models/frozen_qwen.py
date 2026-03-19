@@ -4,9 +4,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from xtuner.registry import BUILDER
 from mmengine.model import BaseModel
-from xtuner.model.utils import LoadWoInit
 from mmengine.logging import print_log
-from flmm.utils import compute_mask_IoU
+from flmm.utils import LoadWoInit, compute_mask_IoU
 from typing import Dict, List, Optional, Tuple
 
 
@@ -319,7 +318,11 @@ class FrozenQwenSAM(FrozenQwen):
             query = "Describe this image."
         system_prompt = self._sanitize_prompt_text(self.prompt_template.get('SYSTEM', '').strip())
         if system_prompt:
-            system_prompt = f"{system_prompt}\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion."
+            system_prompt = (
+                f"{system_prompt}\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, "
+                "or irrelevant characters such as addCriterion. Do not output meta UI labels or disclaimers such as "
+                "\"自动生成\"."
+            )
         conversation: List[Dict] = []
         if system_prompt:
             conversation.append({
@@ -372,6 +375,42 @@ class FrozenQwenSAM(FrozenQwen):
             sanitized = sanitized.replace(token, ' ')
         return ' '.join(sanitized.split()).strip()
 
+    def _get_bad_words_ids(self) -> List[List[int]]:
+        cached = getattr(self, '_bad_words_ids', None)
+        if cached is not None:
+            return cached
+        phrases = [
+            '自动生成',
+            ' 自动生成',
+            '\n自动生成',
+            '自动 生成',
+            '自动\n生成',
+            '自动生成\n',
+            'addCriterion',
+            'addcriterion',
+        ]
+        bad_words_ids: List[List[int]] = []
+        for phrase in phrases:
+            try:
+                enc = self.tokenizer(phrase, add_special_tokens=False)
+            except Exception:
+                continue
+            if isinstance(enc, dict):
+                ids = enc.get('input_ids')
+            else:
+                ids = getattr(enc, 'input_ids', None)
+            if ids is None:
+                continue
+            if isinstance(ids, list):
+                if ids and isinstance(ids[0], list):
+                    ids = ids[0]
+            else:
+                ids = list(ids)
+            if ids:
+                bad_words_ids.append([int(i) for i in ids])
+        self._bad_words_ids = bad_words_ids
+        return bad_words_ids
+
     def _prepare_for_generation(self,
                                 image_processor,
                                 prompt_template,
@@ -389,6 +428,7 @@ class FrozenQwenSAM(FrozenQwen):
         self.max_new_tokens = max_new_tokens
         self.additional_prompt = self._sanitize_prompt_text(additional_prompt or '')
         self.max_history_turns = max(0, int(max_history_turns or 0))
+        self._bad_words_ids = None
         self._generation_ready = True
         self._ensure_vision_hook()
 
@@ -431,6 +471,7 @@ class FrozenQwenSAM(FrozenQwen):
         #     pad_token_id=pad_id,
         # )
 
+        bad_words_ids = self._get_bad_words_ids()
         gen_out = self.qwen_model.generate(
             input_ids=input_ids,
             pixel_values=pixel_values,
@@ -443,6 +484,7 @@ class FrozenQwenSAM(FrozenQwen):
             no_repeat_ngram_size=6,
             eos_token_id=self.tokenizer.eos_token_id,
             pad_token_id=pad_id,
+            bad_words_ids=bad_words_ids or None,
             return_dict_in_generate=True,
             output_attentions=True,
             output_hidden_states=True,
@@ -674,7 +716,11 @@ class FrozenQwenSAM(FrozenQwen):
         prompt_parts = []
         if system_prompt:
             prompt_parts.append("<|im_start|>system\n")
-            safe_system = f"{system_prompt}\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion."
+            safe_system = (
+                f"{system_prompt}\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, "
+                "or irrelevant characters such as addCriterion. Do not output meta UI labels or disclaimers such as "
+                "\"自动生成\"."
+            )
             prompt_parts.append(safe_system)
             prompt_parts.append("\n<|im_end|>\n")
         prompt_parts.append("<|im_start|>user\n")
@@ -708,6 +754,7 @@ class FrozenQwenSAM(FrozenQwen):
         #     do_sample=False,
         # )
 
+        bad_words_ids = self._get_bad_words_ids()
         seq = self.qwen_model.generate(
             inputs_embeds=inputs_embeds,
             attention_mask=attention_mask,
@@ -717,6 +764,7 @@ class FrozenQwenSAM(FrozenQwen):
             do_sample=False,
             repetition_penalty=1.12,
             no_repeat_ngram_size=6,
+            bad_words_ids=bad_words_ids or None,
         )
         input_len = input_ids.shape[-1]
         if seq.shape[-1] > input_len:
@@ -984,8 +1032,8 @@ if __name__ == '__main__':
     注意：需要根据实际的 Qwen 模型和配置进行调整
     """
     from PIL import Image
-    from xtuner.model.utils import guess_load_checkpoint
     from mmengine.config import Config
+    from scripts.demo.checkpoint_utils import guess_load_checkpoint
     
     # 示例：加载配置和模型
     # cfg = Config.fromfile('configs/qwen/frozen_qwen_xxx.py')

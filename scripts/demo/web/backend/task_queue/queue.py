@@ -5,8 +5,18 @@ import json
 import sqlite3
 from typing import Any, Dict, Optional
 
+from .paths import (
+    TASK_TYPE_REGION_TO_TOKEN,
+    TASK_TYPE_TOKEN_TO_REGION,
+    canonical_task_type,
+)
 
-TASK_TYPES = {"ASK", "GROUND", "ATTN_I2T", "ATTN_T2I"}
+TASK_TYPES = {
+    "ASK",
+    "GROUND",
+    TASK_TYPE_TOKEN_TO_REGION,
+    TASK_TYPE_REGION_TO_TOKEN,
+}
 TASK_STATUSES = {"PENDING", "RUNNING", "DONE", "FAILED"}
 
 
@@ -46,7 +56,7 @@ def _deserialize(blob: Optional[str]) -> Optional[Any]:
 def _row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return {
         "id": row["id"],
-        "type": row["type"],
+        "type": canonical_task_type(row["type"]),
         "status": row["status"],
         "session_id": row["session_id"],
         "turn_idx": row["turn_idx"],
@@ -71,6 +81,7 @@ def enqueue_task(
 ) -> int:
     if task_type not in TASK_TYPES:
         raise ValueError(f"Invalid task type: {task_type}")
+    task_type = canonical_task_type(task_type)
     payload = _serialize(input_obj)
     if task_type == "ASK":
         # Ensure only one ASK per turn: remove any existing then insert fresh
@@ -86,7 +97,7 @@ def enqueue_task(
             (task_type, session_id, turn_idx, turn_uid, payload),
         )
     else:
-        # GROUND / ATTN_* allow multiple per turn; no upsert
+        # GROUND / *_TO_* allow multiple per turn; no upsert
         cur = conn.execute(
             """
             INSERT INTO tasks (type, status, session_id, turn_idx, turn_uid, input_json)

@@ -6,7 +6,6 @@ import json
 import sys
 import uuid
 from pathlib import Path
-from typing import Any
 
 from mmengine.config import Config
 from PIL import Image
@@ -15,12 +14,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.demo.attention_i2t import build_i2t_heatmap, render_overlay, token_text_from_ids  # noqa: E402
+from scripts.demo.token_to_region import (  # noqa: E402
+    build_token_to_region_heatmap,
+    render_overlay,
+    token_text_from_ids,
+)
 from scripts.demo.interact import load_model, resolve_image_path  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate I2T attention overlay for a token span.")
+    parser = argparse.ArgumentParser(
+        description="Generate token-to-region heatmap for a token span."
+    )
     parser.add_argument(
         "config",
         nargs="?",
@@ -46,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--layer", default="mean")
     parser.add_argument("--head", default="mean")
     parser.add_argument("--reduction", default="mean", choices=["mean", "max"])
-    parser.add_argument("--out-dir", default="scripts/demo/results/attn_i2t")
+    parser.add_argument("--out-dir", default="scripts/demo/results/token_to_region")
     return parser.parse_args()
 
 
@@ -57,12 +62,14 @@ def _load_image(path_str: str) -> Image.Image:
 
 def main() -> None:
     args = parse_args()
-    cfg_path = args.config if Path(args.config).is_absolute() else str(REPO_ROOT / args.config)
+    cfg_path = (
+        args.config if Path(args.config).is_absolute() else str(REPO_ROOT / args.config)
+    )
     cfg = Config.fromfile(cfg_path)
     model = load_model(cfg, args)
     image = _load_image(args.image)
     output = model.answer(image=image, question=args.prompt, max_new_tokens=args.max_new_tokens)
-    heatmap, meta = build_i2t_heatmap(
+    heatmap, meta = build_token_to_region_heatmap(
         attention_maps=output.get("attention_maps"),
         token_span={"start": args.token_start, "end": args.token_end},
         layer=args.layer,

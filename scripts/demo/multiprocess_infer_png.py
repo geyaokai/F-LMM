@@ -1,4 +1,7 @@
 import os
+import sys
+from pathlib import Path
+
 from sklearn.cluster import KMeans
 import numpy as np
 from PIL import Image
@@ -7,12 +10,17 @@ import torch.nn.functional as F
 import argparse
 from flmm.datasets.png import PNGDataset
 from tqdm import tqdm
-from xtuner.registry import BUILDER
-from mmengine.config import Config
-from xtuner.model.utils import guess_load_checkpoint
 from accelerate import Accelerator
 from accelerate.utils import gather_object
 from xtuner.utils.constants import DEFAULT_IMAGE_TOKEN
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+from xtuner.registry import BUILDER
+from mmengine.config import Config
+
+from scripts.demo.checkpoint_utils import guess_load_checkpoint
 from scripts.demo.utils import colors
 
 def compute_mask_IoU(masks, target):

@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0",
+  "description": "Template manifest for scripts/demo/stability_eval.py. Replace placeholder paths and texts before running.",
+  "samples": [
+    {
+      "id": "single_object_easy_001",
+      "image_path": "/abs/path/to/image_001.jpg",
+      "question": "What is the person holding?",
+      "answer_contains": ["umbrella"],
+      "answer_not_contains": ["bag"],
+      "expected_bbox": [412, 188, 603, 471],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "notes": "Single-turn baseline. Should be easy. Use this to verify phrase extraction and first bbox."
+    },
+    {
+      "id": "multi_instance_confusion_002",
+      "image_path": "/abs/path/to/image_002.jpg",
+      "question": "What color is the cup on the left?",
+      "answer_contains": ["blue"],
+      "answer_not_contains": ["red"],
+      "expected_bbox": [95, 214, 181, 332],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "notes": "Two similar objects in one image. Useful for detecting wrong-object grounding."
+    },
+    {
+      "id": "small_object_detail_003",
+      "image_path": "/abs/path/to/image_003.jpg",
+      "question": "What brand is written on the phone?",
+      "answer_contains": ["samsung"],
+      "answer_not_contains": ["iphone"],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "notes": "Small target with text. Good for ROI re-answer validation. expected_bbox optional at first."
+    },
+    {
+      "id": "multiturn_pronoun_004",
+      "image_path": "/abs/path/to/image_004.jpg",
+      "history": [
+        {
+          "role": "user",
+          "text": "What is the man holding?"
+        },
+        {
+          "role": "assistant",
+          "text": "He is holding a tennis racket."
+        }
+      ],
+      "question": "What color is it?",
+      "answer_contains": ["green"],
+      "answer_not_contains": ["blue"],
+      "expected_bbox": [266, 102, 476, 410],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "notes": "Tests whether the model preserves referent across turns."
+    },
+    {
+      "id": "roi_off_control_005",
+      "image_path": "/abs/path/to/image_005.jpg",
+      "question": "What is on the table next to the laptop?",
+      "expectations": {
+        "answer_contains": ["notebook"],
+        "answer_not_contains": ["keyboard"]
+      },
+      "enable_roi": false,
+      "auto_topk": 1,
+      "notes": "Control sample with ROI disabled, useful for comparing raw answer against corrected answer."
+    }
+  ]
+}

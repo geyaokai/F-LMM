@@ -1,0 +1,1 @@
+{"sample_id": "0000_custom_shampoo_room_001", "status": "ok", "auto_failure_tags": ["roi_answer_changed", "bbox_low_iou"], "manual_failure_tags": [], "notes": "Small bottle on the left dresser, near the round mirror. Good for testing small-object grounding.", "review_comment": ""}

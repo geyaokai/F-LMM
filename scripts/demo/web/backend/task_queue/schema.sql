@@ -1,5 +1,6 @@
 -- SQLite schema for async task queue
--- Supports types ASK|GROUND|ATTN_I2T|ATTN_T2I and statuses PENDING|RUNNING|DONE|FAILED
+-- Supports types ASK|GROUND|TOKEN_TO_REGION|REGION_TO_TOKEN and
+-- statuses PENDING|RUNNING|DONE|FAILED
 
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
@@ -10,7 +11,14 @@ DROP INDEX IF EXISTS idx_tasks_ask_turn_unique;
 
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL CHECK (type IN ('ASK','GROUND','ATTN_I2T','ATTN_T2I')),
+    type TEXT NOT NULL CHECK (
+        type IN (
+            'ASK',
+            'GROUND',
+            'TOKEN_TO_REGION',
+            'REGION_TO_TOKEN'
+        )
+    ),
     status TEXT NOT NULL CHECK (status IN ('PENDING','RUNNING','DONE','FAILED')),
     session_id TEXT NOT NULL,
     turn_idx INTEGER,

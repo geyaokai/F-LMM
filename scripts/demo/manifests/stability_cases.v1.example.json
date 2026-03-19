@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "description": "Starter example for scripts/demo/stability_eval.py. Replace paths or extend with more samples before running.",
+  "samples": [
+    {
+      "id": "custom_shampoo_room_001",
+      "image_path": "/home/hechen/gyk/F-LMM/data/custom/shampoo_room.png",
+      "question": "Where is the shampoo?",
+      "answer_contains": ["dresser"],
+      "answer_not_contains": ["bookshelf", "bed"],
+      "expected_bbox": [112, 165, 150, 247],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "notes": "Small bottle on the left dresser, near the round mirror. Good for testing small-object grounding."
+    }
+  ]
+}

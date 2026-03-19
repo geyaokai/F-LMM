@@ -58,7 +58,7 @@ def _select_layers_heads(
     return attn, layer_value, head_value
 
 
-def build_i2t_heatmap(
+def build_token_to_region_heatmap(
     attention_maps: torch.Tensor,
     token_span: TokenSpanInput,
     layer: Any = "mean",
@@ -100,6 +100,7 @@ def build_i2t_heatmap(
         "normalize": "minmax",
         "token_span": {"start": int(start), "end": int(end), "right_open": True},
         "span_type": "token_index",
+        "analysis_type": "token_to_region",
     }
     return heat.astype(np.float32), meta
 

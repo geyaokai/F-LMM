@@ -1,5 +1,12 @@
 # Web Demo 端到端逻辑说明
 
+建议阅读顺序：
+
+1. 如果你是前端开发者或前端 agent，先看 [`FRONTEND_AGENT_HANDOFF.md`](./FRONTEND_AGENT_HANDOFF.md)
+2. 如果你要理解后端和模型复用关系，再看本文
+3. 如果你要启动服务，再看 [`../../scripts/demo/web/backend/README.md`](../../scripts/demo/web/backend/README.md)
+4. 如果你要理解 explainable 的代码逻辑，再看 [`../06-explainable-framework/DEMO_USAGE_AND_CODE_GUIDE.md`](../06-explainable-framework/DEMO_USAGE_AND_CODE_GUIDE.md)
+
 本文串联前端、后端与模型侧（`frozen_qwen.py`）的主要流程，便于排查「回答对但找不到 / 代词不接上下文」等问题。
 
 ## 组件与入口

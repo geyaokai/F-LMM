@@ -1,0 +1,1050 @@
+{
+  "summary": {
+    "created_at": "2026-03-16 22:08:03",
+    "manifest_path": "/home/hechen/gyk/F-LMM/scripts/demo/manifests/stability_cases.v1.json",
+    "config": "/home/hechen/gyk/F-LMM/configs/qwen/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.py",
+    "checkpoint": "/home/hechen/gyk/F-LMM/checkpoints/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.pth",
+    "num_samples": 7,
+    "num_success": 7,
+    "num_failed": 0,
+    "artifact_root": "/home/hechen/gyk/F-LMM/scripts/demo/results/stability/phase1_v1_full_single_gpu/artifacts",
+    "tag_counts": {
+      "answer_contains_forbidden_text": 3,
+      "answer_decoding_artifact": 1,
+      "answer_missing_required_text": 3,
+      "bbox_low_iou": 7,
+      "roi_answer_changed": 7,
+      "roi_answer_rejected_artifact": 1
+    }
+  },
+  "samples": [
+    {
+      "sample_id": "0000_custom_shampoo_room_001",
+      "manifest_index": 0,
+      "source_id": "custom_shampoo_room_001",
+      "notes": "Small bottle on the left dresser, near the round mirror. Good for testing small-object grounding.",
+      "manual_failure_tags": [],
+      "status": "ok",
+      "image_path": "data/custom/shampoo_room.png",
+      "question": "Where is the shampoo?",
+      "history": [],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "timing_s": {
+        "load_image": 0.0089,
+        "ask_pipeline": 4.848,
+        "total": 4.8569
+      },
+      "session_dir": "sessions/0000_custom_shampoo_room_001",
+      "loaded_image_path": "sessions/0000_custom_shampoo_room_001/images/shampoo_room.png",
+      "raw_answer": "The image does not show any there shampoo might be located.",
+      "answer": "The shampoo is on the dresser, to the left of the mirror.",
+      "roi_answer": "The shampoo is on the dresser, to the left of the mirror.",
+      "verification": {
+        "original_answer": "The image does not show any there shampoo might be located.",
+        "raw_answer_cleaned": "The image does not show any there shampoo might be located.",
+        "raw_answer_artifacts": [],
+        "used": true,
+        "roi_answer": "The shampoo is on the dresser, to the left of the mirror.",
+        "roi_answer_cleaned": "The shampoo is on the dresser, to the left of the mirror.",
+        "roi_answer_artifacts": [],
+        "roi_bbox": [
+          0,
+          86,
+          584,
+          482
+        ],
+        "roi_prompt": "<|im_start|>system\nsystem You are a helpful assistant.\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion. Do not output meta UI labels or disclaimers such as \"自动生成\".\n<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|vision_end|>\nWhere is the shampoo?\nFocus on the visual context above when answering.\n<|im_end|>\n<|im_start|>assistant\n",
+        "roi_answer_accepted": true
+      },
+      "phrases": [
+        {
+          "index": 0,
+          "text": "shampoo",
+          "char_span": [
+            34,
+            41
+          ],
+          "token_span": [
+            7,
+            8
+          ]
+        }
+      ],
+      "ground_records": [
+        {
+          "index": 0,
+          "phrase": "shampoo",
+          "char_span": [
+            34,
+            41
+          ],
+          "token_span": [
+            7,
+            8
+          ],
+          "bbox": [
+            0,
+            86,
+            584,
+            482
+          ],
+          "overlay_path": "sessions/0000_custom_shampoo_room_001/turns/turn_0000/ground/ground_0000/overlay_00.png",
+          "mask_path": "sessions/0000_custom_shampoo_room_001/turns/turn_0000/ground/ground_0000/mask_00.png",
+          "roi_path": "sessions/0000_custom_shampoo_room_001/turns/turn_0000/ground/ground_0000/roi_00.png"
+        }
+      ],
+      "expectations": {
+        "answer_contains": [
+          "dresser"
+        ],
+        "answer_not_contains": [
+          "bookshelf",
+          "bed"
+        ],
+        "expected_bbox": [
+          112.0,
+          165.0,
+          150.0,
+          247.0
+        ]
+      },
+      "checks": {
+        "answer_contains": [
+          {
+            "text": "dresser",
+            "passed": true
+          }
+        ],
+        "answer_not_contains": [
+          {
+            "text": "bookshelf",
+            "passed": true
+          },
+          {
+            "text": "bed",
+            "passed": true
+          }
+        ],
+        "expected_bbox": [
+          112.0,
+          165.0,
+          150.0,
+          247.0
+        ],
+        "predicted_bbox": [
+          0.0,
+          86.0,
+          584.0,
+          482.0
+        ],
+        "bbox_iou": 0.013473778884737789
+      },
+      "auto_failure_tags": [
+        "roi_answer_changed",
+        "bbox_low_iou"
+      ],
+      "history_turns_after": 1
+    },
+    {
+      "sample_id": "0001_repo_gqa_window_001",
+      "manifest_index": 1,
+      "source_id": "repo_gqa_window_001",
+      "notes": "Spatial relation case from GQA. Small target region.",
+      "manual_failure_tags": [],
+      "status": "ok",
+      "image_path": "data/cot/gqa/2316539.jpg",
+      "question": "What are the tree branches in front of?",
+      "history": [],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "timing_s": {
+        "load_image": 0.0048,
+        "ask_pipeline": 4.6066,
+        "total": 4.6114
+      },
+      "session_dir": "sessions/0001_repo_gqa_window_001",
+      "loaded_image_path": "sessions/0001_repo_gqa_window_001/images/2316539.jpg",
+      "raw_answer": "The tree branches appear to be in front of a building with an architectural structure that includes a clock mounted on it.",
+      "answer": "The tree branches are appear in above the clock and windows of a brick structure.",
+      "roi_answer": "The tree branches are appear in above the clock and windows of a brick structure.",
+      "verification": {
+        "original_answer": "The tree branches appear to be in front of a building with an architectural structure that includes a clock mounted on it.",
+        "raw_answer_cleaned": "The tree branches appear to be in front of a building with an architectural structure that includes a clock mounted on it.",
+        "raw_answer_artifacts": [],
+        "used": true,
+        "roi_answer": "The tree branches are appear in above the clock and windows of a brick structure.",
+        "roi_answer_cleaned": "The tree branches are appear in above the clock and windows of a brick structure.",
+        "roi_answer_artifacts": [],
+        "roi_bbox": [
+          0,
+          0,
+          391,
+          500
+        ],
+        "roi_prompt": "<|im_start|>system\nsystem You are a helpful assistant.\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion. Do not output meta UI labels or disclaimers such as \"自动生成\".\n<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|vision_end|>\nWhat are the tree branches in front of?\nFocus on the visual context above when answering.\n<|im_end|>\n<|im_start|>assistant\n",
+        "roi_answer_accepted": true
+      },
+      "phrases": [
+        {
+          "index": 0,
+          "text": "tree branches",
+          "char_span": [
+            4,
+            17
+          ],
+          "token_span": [
+            1,
+            3
+          ]
+        },
+        {
+          "index": 1,
+          "text": "building",
+          "char_span": [
+            45,
+            53
+          ],
+          "token_span": [
+            10,
+            11
+          ]
+        },
+        {
+          "index": 2,
+          "text": "architectural structure",
+          "char_span": [
+            62,
+            85
+          ],
+          "token_span": [
+            13,
+            15
+          ]
+        },
+        {
+          "index": 3,
+          "text": "clock",
+          "char_span": [
+            102,
+            107
+          ],
+          "token_span": [
+            18,
+            19
+          ]
+        }
+      ],
+      "ground_records": [
+        {
+          "index": 0,
+          "phrase": "tree branches",
+          "char_span": [
+            4,
+            17
+          ],
+          "token_span": [
+            1,
+            3
+          ],
+          "bbox": [
+            0,
+            0,
+            391,
+            500
+          ],
+          "overlay_path": "sessions/0001_repo_gqa_window_001/turns/turn_0000/ground/ground_0000/overlay_00.png",
+          "mask_path": "sessions/0001_repo_gqa_window_001/turns/turn_0000/ground/ground_0000/mask_00.png",
+          "roi_path": "sessions/0001_repo_gqa_window_001/turns/turn_0000/ground/ground_0000/roi_00.png"
+        }
+      ],
+      "expectations": {
+        "answer_contains": [
+          "window"
+        ],
+        "answer_not_contains": [],
+        "expected_bbox": [
+          217.0,
+          343.0,
+          242.0,
+          393.0
+        ]
+      },
+      "checks": {
+        "answer_contains": [
+          {
+            "text": "window",
+            "passed": true
+          }
+        ],
+        "answer_not_contains": [],
+        "expected_bbox": [
+          217.0,
+          343.0,
+          242.0,
+          393.0
+        ],
+        "predicted_bbox": [
+          0.0,
+          0.0,
+          391.0,
+          500.0
+        ],
+        "bbox_iou": 0.00639386189258312
+      },
+      "auto_failure_tags": [
+        "roi_answer_changed",
+        "bbox_low_iou"
+      ],
+      "history_turns_after": 1
+    },
+    {
+      "sample_id": "0002_repo_gqa_lettuce_002",
+      "manifest_index": 2,
+      "source_id": "repo_gqa_lettuce_002",
+      "notes": "Fine-grained food recognition with a relation phrase.",
+      "manual_failure_tags": [],
+      "status": "ok",
+      "image_path": "data/cot/gqa/2414389.jpg",
+      "question": "What vegetable is above the cooked carrot in the salad?",
+      "history": [],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "timing_s": {
+        "load_image": 0.0035,
+        "ask_pipeline": 4.0853,
+        "total": 4.0888
+      },
+      "session_dir": "sessions/0002_repo_gqa_lettuce_002",
+      "loaded_image_path": "sessions/0002_repo_gqa_lettuce_002/images/2414389.jpg",
+      "raw_answer": "The vegetable above the cooked carrot appears to be a piece of fennel.",
+      "answer": "The vegetable above the cooked carrot in the salad appears to be a piece of fennel.",
+      "roi_answer": "The vegetable above the cooked carrot in the salad appears to be a piece of fennel.",
+      "verification": {
+        "original_answer": "The vegetable above the cooked carrot appears to be a piece of fennel.",
+        "raw_answer_cleaned": "The vegetable above the cooked carrot appears to be a piece of fennel.",
+        "raw_answer_artifacts": [],
+        "used": true,
+        "roi_answer": "The vegetable above the cooked carrot in the salad appears to be a piece of fennel.",
+        "roi_answer_cleaned": "The vegetable above the cooked carrot in the salad appears to be a piece of fennel.",
+        "roi_answer_artifacts": [],
+        "roi_bbox": [
+          66,
+          36,
+          471,
+          331
+        ],
+        "roi_prompt": "<|im_start|>system\nsystem You are a helpful assistant.\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion. Do not output meta UI labels or disclaimers such as \"自动生成\".\n<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|vision_end|>\nWhat vegetable is above the cooked carrot in the salad?\nFocus on the visual context above when answering.\n<|im_end|>\n<|im_start|>assistant\n",
+        "roi_answer_accepted": true
+      },
+      "phrases": [
+        {
+          "index": 0,
+          "text": "vegetable",
+          "char_span": [
+            4,
+            13
+          ],
+          "token_span": [
+            1,
+            2
+          ]
+        },
+        {
+          "index": 1,
+          "text": "cooked carrot",
+          "char_span": [
+            24,
+            37
+          ],
+          "token_span": [
+            4,
+            6
+          ]
+        },
+        {
+          "index": 2,
+          "text": "piece of fennel",
+          "char_span": [
+            54,
+            69
+          ],
+          "token_span": [
+            10,
+            15
+          ]
+        }
+      ],
+      "ground_records": [
+        {
+          "index": 0,
+          "phrase": "vegetable",
+          "char_span": [
+            4,
+            13
+          ],
+          "token_span": [
+            1,
+            2
+          ],
+          "bbox": [
+            66,
+            36,
+            471,
+            331
+          ],
+          "overlay_path": "sessions/0002_repo_gqa_lettuce_002/turns/turn_0000/ground/ground_0000/overlay_00.png",
+          "mask_path": "sessions/0002_repo_gqa_lettuce_002/turns/turn_0000/ground/ground_0000/mask_00.png",
+          "roi_path": "sessions/0002_repo_gqa_lettuce_002/turns/turn_0000/ground/ground_0000/roi_00.png"
+        }
+      ],
+      "expectations": {
+        "answer_contains": [
+          "lettuce"
+        ],
+        "answer_not_contains": [
+          "carrot"
+        ],
+        "expected_bbox": [
+          227.0,
+          68.0,
+          391.0,
+          173.0
+        ]
+      },
+      "checks": {
+        "answer_contains": [
+          {
+            "text": "lettuce",
+            "passed": false
+          }
+        ],
+        "answer_not_contains": [
+          {
+            "text": "carrot",
+            "passed": false
+          }
+        ],
+        "expected_bbox": [
+          227.0,
+          68.0,
+          391.0,
+          173.0
+        ],
+        "predicted_bbox": [
+          66.0,
+          36.0,
+          471.0,
+          331.0
+        ],
+        "bbox_iou": 0.14413057124921533
+      },
+      "auto_failure_tags": [
+        "roi_answer_changed",
+        "answer_missing_required_text",
+        "answer_contains_forbidden_text",
+        "bbox_low_iou"
+      ],
+      "history_turns_after": 1
+    },
+    {
+      "sample_id": "0003_repo_openimages_glasses_003",
+      "manifest_index": 3,
+      "source_id": "repo_openimages_glasses_003",
+      "notes": "Accessory grounding on a crowded indoor scene.",
+      "manual_failure_tags": [],
+      "status": "ok",
+      "image_path": "data/cot/openimages/2e90902eaa726aac.jpg",
+      "question": "What is the standing woman wearing?",
+      "history": [],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "timing_s": {
+        "load_image": 0.0082,
+        "ask_pipeline": 8.0391,
+        "total": 8.0474
+      },
+      "session_dir": "sessions/0003_repo_openimages_glasses_003",
+      "loaded_image_path": "sessions/0003_repo_openimages_glasses_003/images/2e90902eaa726aac.jpg",
+      "raw_answer": "The standing woman is wearing glasses and a dark-colored top with a V-neckline.",
+      "answer": "The standing woman is wearing a black top and glasses.",
+      "roi_answer": "The standing woman is wearing a black top and glasses.",
+      "verification": {
+        "original_answer": "The standing woman is wearing glasses and a dark-colored top with a V-neckline.",
+        "raw_answer_cleaned": "The standing woman is wearing glasses and a dark-colored top with a V-neckline.",
+        "raw_answer_artifacts": [],
+        "used": true,
+        "roi_answer": "The standing woman is wearing a black top and glasses.",
+        "roi_answer_cleaned": "The standing woman is wearing a black top and glasses.",
+        "roi_answer_artifacts": [],
+        "roi_bbox": [
+          0,
+          47,
+          726,
+          678
+        ],
+        "roi_prompt": "<|im_start|>system\nsystem You are a helpful assistant.\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion. Do not output meta UI labels or disclaimers such as \"自动生成\".\n<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|vision_end|>\nWhat is the standing woman wearing?\nFocus on the visual context above when answering.\n<|im_end|>\n<|im_start|>assistant\n",
+        "roi_answer_accepted": true
+      },
+      "phrases": [
+        {
+          "index": 0,
+          "text": "standing woman",
+          "char_span": [
+            4,
+            18
+          ],
+          "token_span": [
+            1,
+            3
+          ]
+        },
+        {
+          "index": 1,
+          "text": "glasses",
+          "char_span": [
+            30,
+            37
+          ],
+          "token_span": [
+            5,
+            6
+          ]
+        },
+        {
+          "index": 2,
+          "text": "dark-colored top",
+          "char_span": [
+            44,
+            60
+          ],
+          "token_span": [
+            8,
+            11
+          ]
+        },
+        {
+          "index": 3,
+          "text": "V-neckline",
+          "char_span": [
+            68,
+            78
+          ],
+          "token_span": [
+            13,
+            16
+          ]
+        }
+      ],
+      "ground_records": [
+        {
+          "index": 0,
+          "phrase": "standing woman",
+          "char_span": [
+            4,
+            18
+          ],
+          "token_span": [
+            1,
+            3
+          ],
+          "bbox": [
+            0,
+            47,
+            726,
+            678
+          ],
+          "overlay_path": "sessions/0003_repo_openimages_glasses_003/turns/turn_0000/ground/ground_0000/overlay_00.png",
+          "mask_path": "sessions/0003_repo_openimages_glasses_003/turns/turn_0000/ground/ground_0000/mask_00.png",
+          "roi_path": "sessions/0003_repo_openimages_glasses_003/turns/turn_0000/ground/ground_0000/roi_00.png"
+        }
+      ],
+      "expectations": {
+        "answer_contains": [
+          "glasses"
+        ],
+        "answer_not_contains": [
+          "goggles"
+        ],
+        "expected_bbox": [
+          575.0,
+          321.0,
+          733.0,
+          382.0
+        ]
+      },
+      "checks": {
+        "answer_contains": [
+          {
+            "text": "glasses",
+            "passed": true
+          }
+        ],
+        "answer_not_contains": [
+          {
+            "text": "goggles",
+            "passed": true
+          }
+        ],
+        "expected_bbox": [
+          575.0,
+          321.0,
+          733.0,
+          382.0
+        ],
+        "predicted_bbox": [
+          0.0,
+          47.0,
+          726.0,
+          678.0
+        ],
+        "bbox_iou": 0.02008797621981406
+      },
+      "auto_failure_tags": [
+        "roi_answer_changed",
+        "bbox_low_iou"
+      ],
+      "history_turns_after": 1
+    },
+    {
+      "sample_id": "0004_repo_flickr_ball_004",
+      "manifest_index": 4,
+      "source_id": "repo_flickr_ball_004",
+      "notes": "Small object under action and body-part constraints.",
+      "manual_failure_tags": [],
+      "status": "ok",
+      "image_path": "data/cot/flickr30k/2472678549.jpg",
+      "question": "Can you tell me what the boy is holding in his right hand while standing in the bathroom?",
+      "history": [],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "timing_s": {
+        "load_image": 0.0036,
+        "ask_pipeline": 4.3881,
+        "total": 4.3918
+      },
+      "session_dir": "sessions/0004_repo_flickr_ball_004",
+      "loaded_image_path": "sessions/0004_repo_flickr_ball_004/images/2472678549.jpg",
+      "raw_answer": "The boy is holding a toothbrush in his right hand while he standing in the bathroom.",
+      "answer": "The boy is holding a toothbrush in his right hand while standing in the bathroom.",
+      "roi_answer": "The boy is holding a toothbrush in his right hand while standing in the bathroom.",
+      "verification": {
+        "original_answer": "The boy is holding a toothbrush in his right hand while he standing in the bathroom.",
+        "raw_answer_cleaned": "The boy is holding a toothbrush in his right hand while he standing in the bathroom.",
+        "raw_answer_artifacts": [],
+        "used": true,
+        "roi_answer": "The boy is holding a toothbrush in his right hand while standing in the bathroom.",
+        "roi_answer_cleaned": "The boy is holding a toothbrush in his right hand while standing in the bathroom.",
+        "roi_answer_artifacts": [],
+        "roi_bbox": [
+          80,
+          1,
+          348,
+          372
+        ],
+        "roi_prompt": "<|im_start|>system\nsystem You are a helpful assistant.\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion. Do not output meta UI labels or disclaimers such as \"自动生成\".\n<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|vision_end|>\nCan you tell me what the boy is holding in his right hand while standing in the bathroom?\nFocus on the visual context above when answering.\n<|im_end|>\n<|im_start|>assistant\n",
+        "roi_answer_accepted": true
+      },
+      "phrases": [
+        {
+          "index": 0,
+          "text": "the boy",
+          "char_span": [
+            0,
+            7
+          ],
+          "token_span": [
+            0,
+            2
+          ]
+        },
+        {
+          "index": 1,
+          "text": "a toothbrush",
+          "char_span": [
+            19,
+            31
+          ],
+          "token_span": [
+            4,
+            7
+          ]
+        },
+        {
+          "index": 2,
+          "text": "his right hand",
+          "char_span": [
+            35,
+            49
+          ],
+          "token_span": [
+            8,
+            11
+          ]
+        },
+        {
+          "index": 3,
+          "text": "in the bathroom",
+          "char_span": [
+            68,
+            83
+          ],
+          "token_span": [
+            14,
+            17
+          ]
+        }
+      ],
+      "ground_records": [
+        {
+          "index": 0,
+          "phrase": "the boy",
+          "char_span": [
+            0,
+            7
+          ],
+          "token_span": [
+            0,
+            2
+          ],
+          "bbox": [
+            80,
+            1,
+            348,
+            372
+          ],
+          "overlay_path": "sessions/0004_repo_flickr_ball_004/turns/turn_0000/ground/ground_0000/overlay_00.png",
+          "mask_path": "sessions/0004_repo_flickr_ball_004/turns/turn_0000/ground/ground_0000/mask_00.png",
+          "roi_path": "sessions/0004_repo_flickr_ball_004/turns/turn_0000/ground/ground_0000/roi_00.png"
+        }
+      ],
+      "expectations": {
+        "answer_contains": [
+          "ball"
+        ],
+        "answer_not_contains": [
+          "toothbrush"
+        ],
+        "expected_bbox": [
+          287.0,
+          62.0,
+          334.0,
+          114.0
+        ]
+      },
+      "checks": {
+        "answer_contains": [
+          {
+            "text": "ball",
+            "passed": false
+          }
+        ],
+        "answer_not_contains": [
+          {
+            "text": "toothbrush",
+            "passed": false
+          }
+        ],
+        "expected_bbox": [
+          287.0,
+          62.0,
+          334.0,
+          114.0
+        ],
+        "predicted_bbox": [
+          80.0,
+          1.0,
+          348.0,
+          372.0
+        ],
+        "bbox_iou": 0.024580601037937
+      },
+      "auto_failure_tags": [
+        "roi_answer_changed",
+        "answer_missing_required_text",
+        "answer_contains_forbidden_text",
+        "bbox_low_iou"
+      ],
+      "history_turns_after": 1
+    },
+    {
+      "sample_id": "0005_repo_textvqa_aged_005",
+      "manifest_index": 5,
+      "source_id": "repo_textvqa_aged_005",
+      "notes": "OCR-like small text region on a bottle label.",
+      "manual_failure_tags": [],
+      "status": "ok",
+      "image_path": "data/cot/textvqa/831bcec304a17054.jpg",
+      "question": "How long has the drink on the right been aged?",
+      "history": [],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "timing_s": {
+        "load_image": 0.0063,
+        "ask_pipeline": 7.0848,
+        "total": 7.0911
+      },
+      "session_dir": "sessions/0005_repo_textvqa_aged_005",
+      "loaded_image_path": "sessions/0005_repo_textvqa_aged_005/images/831bcec304a17054.jpg",
+      "raw_answer": "The drink on the right is Bowmore Islay Single M 10 years old.",
+      "answer": "The drink on the right is Bowmore Islay Single M 10 years old.",
+      "roi_answer": "The drink on the right, Bowmore Islay Single\n addCriterion\n\n addCriterion\n\nmatchCondition\n\nGuidId",
+      "verification": {
+        "original_answer": "The drink on the right is Bowmore Islay Single M 10 years old.",
+        "raw_answer_cleaned": "The drink on the right is Bowmore Islay Single M 10 years old.",
+        "raw_answer_artifacts": [],
+        "used": true,
+        "roi_answer": "The drink on the right, Bowmore Islay Single\n addCriterion\n\n addCriterion\n\nmatchCondition\n\nGuidId",
+        "roi_answer_cleaned": "The drink on the right, Bowmore Islay Single",
+        "roi_answer_artifacts": [
+          "addcriterion",
+          "matchcondition",
+          "guidid"
+        ],
+        "roi_bbox": [
+          563,
+          3,
+          896,
+          575
+        ],
+        "roi_prompt": "<|im_start|>system\nsystem You are a helpful assistant.\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion. Do not output meta UI labels or disclaimers such as \"自动生成\".\n<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|vision_end|>\nHow long has the drink on the right been aged?\nFocus on the visual context above when answering.\n<|im_end|>\n<|im_start|>assistant\n",
+        "roi_answer_accepted": false,
+        "roi_rejected_reason": "answer_artifact"
+      },
+      "phrases": [
+        {
+          "index": 0,
+          "text": "Bowmore Islay",
+          "char_span": [
+            26,
+            39
+          ],
+          "token_span": [
+            6,
+            10
+          ]
+        },
+        {
+          "index": 1,
+          "text": "10 years old",
+          "char_span": [
+            49,
+            61
+          ],
+          "token_span": [
+            13,
+            17
+          ]
+        }
+      ],
+      "ground_records": [
+        {
+          "index": 0,
+          "phrase": "Bowmore Islay",
+          "char_span": [
+            26,
+            39
+          ],
+          "token_span": [
+            6,
+            10
+          ],
+          "bbox": [
+            563,
+            3,
+            896,
+            575
+          ],
+          "overlay_path": "sessions/0005_repo_textvqa_aged_005/turns/turn_0000/ground/ground_0000/overlay_00.png",
+          "mask_path": "sessions/0005_repo_textvqa_aged_005/turns/turn_0000/ground/ground_0000/mask_00.png",
+          "roi_path": "sessions/0005_repo_textvqa_aged_005/turns/turn_0000/ground/ground_0000/roi_00.png"
+        }
+      ],
+      "expectations": {
+        "answer_contains": [
+          "10"
+        ],
+        "answer_not_contains": [
+          "12"
+        ],
+        "expected_bbox": [
+          646.0,
+          522.0,
+          711.0,
+          574.0
+        ]
+      },
+      "checks": {
+        "answer_contains": [
+          {
+            "text": "10",
+            "passed": true
+          }
+        ],
+        "answer_not_contains": [
+          {
+            "text": "12",
+            "passed": true
+          }
+        ],
+        "expected_bbox": [
+          646.0,
+          522.0,
+          711.0,
+          574.0
+        ],
+        "predicted_bbox": [
+          563.0,
+          3.0,
+          896.0,
+          575.0
+        ],
+        "bbox_iou": 0.017745017745017744
+      },
+      "auto_failure_tags": [
+        "answer_decoding_artifact",
+        "roi_answer_changed",
+        "roi_answer_rejected_artifact",
+        "bbox_low_iou"
+      ],
+      "history_turns_after": 1
+    },
+    {
+      "sample_id": "0006_repo_textcap_lancome_006",
+      "manifest_index": 6,
+      "source_id": "repo_textcap_lancome_006",
+      "notes": "Object relation plus text recognition. Good small-region stress case.",
+      "manual_failure_tags": [],
+      "status": "ok",
+      "image_path": "data/cot/textvqa/de16e970e8c0adbe.jpg",
+      "question": "What brand of perfume is displayed in front of the yellow box?",
+      "history": [],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "timing_s": {
+        "load_image": 0.0062,
+        "ask_pipeline": 8.0015,
+        "total": 8.0077
+      },
+      "session_dir": "sessions/0006_repo_textcap_lancome_006",
+      "loaded_image_path": "sessions/0006_repo_textcap_lancome_006/images/de16e970e8c0adbe.jpg",
+      "raw_answer": "The perfume brand displayed in front of the box is Lancôme.",
+      "answer": "The brand of perfume displayed in front of the yellow box is \"Dolce & Gabbana.\"",
+      "roi_answer": "The brand of perfume displayed in front of the yellow box is \"Dolce & Gabbana.\"",
+      "verification": {
+        "original_answer": "The perfume brand displayed in front of the box is Lancôme.",
+        "raw_answer_cleaned": "The perfume brand displayed in front of the box is Lancôme.",
+        "raw_answer_artifacts": [],
+        "used": true,
+        "roi_answer": "The brand of perfume displayed in front of the yellow box is \"Dolce & Gabbana.\"",
+        "roi_answer_cleaned": "The brand of perfume displayed in front of the yellow box is \"Dolce & Gabbana.\"",
+        "roi_answer_artifacts": [],
+        "roi_bbox": [
+          368,
+          277,
+          770,
+          762
+        ],
+        "roi_prompt": "<|im_start|>system\nsystem You are a helpful assistant.\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion. Do not output meta UI labels or disclaimers such as \"自动生成\".\n<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|vision_end|>\nWhat brand of perfume is displayed in front of the yellow box?\nFocus on the visual context above when answering.\n<|im_end|>\n<|im_start|>assistant\n",
+        "roi_answer_accepted": true
+      },
+      "phrases": [
+        {
+          "index": 0,
+          "text": "perfume brand",
+          "char_span": [
+            4,
+            17
+          ],
+          "token_span": [
+            1,
+            3
+          ]
+        },
+        {
+          "index": 1,
+          "text": "Lancôme",
+          "char_span": [
+            51,
+            58
+          ],
+          "token_span": [
+            10,
+            12
+          ]
+        }
+      ],
+      "ground_records": [
+        {
+          "index": 0,
+          "phrase": "perfume brand",
+          "char_span": [
+            4,
+            17
+          ],
+          "token_span": [
+            1,
+            3
+          ],
+          "bbox": [
+            368,
+            277,
+            770,
+            762
+          ],
+          "overlay_path": "sessions/0006_repo_textcap_lancome_006/turns/turn_0000/ground/ground_0000/overlay_00.png",
+          "mask_path": "sessions/0006_repo_textcap_lancome_006/turns/turn_0000/ground/ground_0000/mask_00.png",
+          "roi_path": "sessions/0006_repo_textcap_lancome_006/turns/turn_0000/ground/ground_0000/roi_00.png"
+        }
+      ],
+      "expectations": {
+        "answer_contains": [
+          "lancome"
+        ],
+        "answer_not_contains": [
+          "dolce"
+        ],
+        "expected_bbox": [
+          227.0,
+          501.0,
+          423.0,
+          549.0
+        ]
+      },
+      "checks": {
+        "answer_contains": [
+          {
+            "text": "lancome",
+            "passed": false
+          }
+        ],
+        "answer_not_contains": [
+          {
+            "text": "dolce",
+            "passed": false
+          }
+        ],
+        "expected_bbox": [
+          227.0,
+          501.0,
+          423.0,
+          549.0
+        ],
+        "predicted_bbox": [
+          368.0,
+          277.0,
+          770.0,
+          762.0
+        ],
+        "bbox_iou": 0.013086280224846087
+      },
+      "auto_failure_tags": [
+        "roi_answer_changed",
+        "answer_missing_required_text",
+        "answer_contains_forbidden_text",
+        "bbox_low_iou"
+      ],
+      "history_turns_after": 1
+    }
+  ]
+}

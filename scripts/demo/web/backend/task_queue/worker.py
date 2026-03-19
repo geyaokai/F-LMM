@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import numpy as np
 import os
 import sys
 import signal
@@ -20,6 +21,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.demo.interact import (  # noqa: E402
     SessionState,
+    build_offsets,
     handle_ground,
     handle_load,
     history_turns,
@@ -27,16 +29,34 @@ from scripts.demo.interact import (  # noqa: E402
     perform_ground_custom,
     pipeline_default_ask,
 )
-from scripts.demo.attention_i2t import (  # noqa: E402
-    build_i2t_heatmap,
+from scripts.demo.token_to_region import (  # noqa: E402
+    build_token_to_region_heatmap,
     parse_token_span,
     render_overlay,
     token_text_from_ids,
 )
+from scripts.demo.region_to_token import (  # noqa: E402
+    build_fallback_phrase_records,
+    build_phrase_records,
+    build_region_mask,
+    build_region_to_token_scores,
+    build_token_records,
+    dump_json as dump_region_to_token_json,
+    rank_records,
+    render_region_artifacts,
+)
 from scripts.demo.web.backend.prompt_overrides import (
     apply_prompt_overrides,
 )  # noqa: E402
-from scripts.demo.web.backend.task_queue.paths import write_json  # noqa: E402
+from scripts.demo.web.backend.task_queue.paths import (  # noqa: E402
+    ATTN_KIND_REGION_TO_TOKEN,
+    ATTN_KIND_TOKEN_TO_REGION,
+    TASK_TYPE_REGION_TO_TOKEN,
+    TASK_TYPE_TOKEN_TO_REGION,
+    canonical_attn_kind,
+    canonical_task_type,
+    write_json,
+)
 from .db import connect, init_db
 from .queue import claim_next_task, mark_done, mark_failed
 
@@ -151,7 +171,10 @@ class WorkerRuntime:
         resolved = history_turns(session) if turn_idx is None else int(turn_idx)
         session.turn_idx = resolved
         session.ground_id = 0
-        session.attn_counters = {"i2t": 0, "t2i": 0}
+        session.attn_counters = {
+            ATTN_KIND_TOKEN_TO_REGION: 0,
+            ATTN_KIND_REGION_TO_TOKEN: 0,
+        }
         session.session_paths.turn_dir(resolved).mkdir(parents=True, exist_ok=True)
         return resolved
 
@@ -332,13 +355,14 @@ class WorkerRuntime:
     def handle_attention(
         self, task: Dict[str, Any], payload: Dict[str, Any], kind: str
     ) -> Dict[str, Any]:
+        kind = canonical_attn_kind(kind)
+        task_type = canonical_task_type(task.get("type"))
+        kind_label = kind.upper()
         session = self._session(task["session_id"])
         turn_hint = (
             payload.get("turn_idx") or task.get("turn_idx") or history_turns(session)
         )
         session.turn_idx = int(turn_hint)
-        if kind != "i2t":
-            raise ValueError("Only ATTN_I2T is supported for now.")
         attn_id = session.attn_counters.get(kind, 0)
         session.attn_counters[kind] = attn_id + 1
         attn_dir = session.session_paths.attn_dir(session.turn_idx, kind, attn_id)
@@ -348,16 +372,13 @@ class WorkerRuntime:
             handle_load(session, image_path)
         if session.current_image is None:
             raise ValueError(
-                "ATTN_I2T requires image_path or a previously loaded image."
+                f"{kind_label} requires image_path or a previously loaded image."
             )
-        token_span_input = payload.get("token_span")
-        if token_span_input is None:
-            raise ValueError("ATTN_I2T requires token_span.")
         prompt = payload.get("prompt") or payload.get("question")
         if session.last_answer is None:
             if not prompt:
                 raise ValueError(
-                    "ATTN_I2T requires prompt when no cached answer exists."
+                    f"{kind_label} requires prompt when no cached answer exists."
                 )
             session.last_answer = session.model.answer(
                 image=session.current_image,
@@ -372,7 +393,128 @@ class WorkerRuntime:
         layer = payload.get("layer", "mean")
         head = payload.get("head", "mean")
         reduction = payload.get("reduction", "mean")
-        heatmap, meta = build_i2t_heatmap(
+        if kind == ATTN_KIND_REGION_TO_TOKEN:
+            bbox = payload.get("bbox")
+            bbox_source = "payload"
+            source_phrase = None
+            record_index = payload.get("record_index")
+            if bbox is None and record_index is not None:
+                idx = int(record_index)
+                if idx < 0 or idx >= len(session.last_records):
+                    raise ValueError(
+                        f"record_index out of range: {idx} (records={len(session.last_records)})"
+                    )
+                record = session.last_records[idx]
+                if not record.bbox:
+                    raise ValueError(f"ground record {idx} has no bbox.")
+                bbox = list(record.bbox)
+                bbox_source = "record_index"
+                source_phrase = record.phrase_text
+            if bbox is None:
+                raise ValueError(
+                    "REGION_TO_TOKEN requires 'bbox' or 'record_index'."
+                )
+            bbox_format = payload.get("bbox_format", "xyxy")
+            raw_scores, norm_scores, per_layer_scores, meta = build_region_to_token_scores(
+                attention_maps=attention_maps,
+                bbox=bbox,
+                image_size=session.current_image.size,
+                layer=layer,
+                head=head,
+                reduction=reduction,
+                bbox_format=bbox_format,
+            )
+            answer_text = answer_cache.get("output_text") or ""
+            offsets = session.token_offsets
+            if offsets is None and answer_text:
+                offsets = build_offsets(session.model.tokenizer, answer_text)
+                session.token_offsets = offsets
+            if offsets is None:
+                offsets = []
+            all_tokens = build_token_records(
+                session.model.tokenizer,
+                answer_cache.get("output_ids"),
+                offsets,
+                raw_scores,
+                norm_scores,
+            )
+            topk = int(payload.get("topk", 8))
+            top_tokens = rank_records(all_tokens, topk=topk)
+            phrase_records = build_phrase_records(norm_scores, session.phrases)
+            top_phrases = rank_records(phrase_records, topk=topk, skip_blank_text=True)
+            if not top_phrases:
+                top_phrases = build_fallback_phrase_records(top_tokens)
+            grid_shape = meta["grid_shape"]
+            region_mask, _ = build_region_mask(
+                meta["bbox"],
+                session.current_image.size,
+                (int(grid_shape["height"]), int(grid_shape["width"])),
+            )
+            bbox_overlay, region_overlay, region_heatmap = render_region_artifacts(
+                session.current_image,
+                meta["bbox"],
+                region_mask,
+            )
+            bbox_overlay_path = attn_dir / "bbox_overlay.png"
+            region_overlay_path = attn_dir / "region_overlay.png"
+            region_heatmap_path = attn_dir / "region_heatmap.png"
+            ranking_path = attn_dir / "ranking.json"
+            bbox_overlay.save(bbox_overlay_path)
+            region_overlay.save(region_overlay_path)
+            region_heatmap.save(region_heatmap_path)
+            layer_summary = []
+            for idx, layer_scores in enumerate(per_layer_scores):
+                token_idx = int(np.argmax(layer_scores)) if layer_scores.size else -1
+                layer_id = idx if meta.get("layer") == "mean" else int(meta["layer"])
+                layer_summary.append(
+                    {
+                        "layer": layer_id,
+                        "max_token_index": token_idx,
+                        "max_token_score": float(layer_scores[token_idx]) if token_idx >= 0 else 0.0,
+                    }
+                )
+            meta["bbox_source"] = bbox_source
+            meta["source_phrase"] = source_phrase
+            meta["topk"] = topk
+            meta["layer_summary"] = layer_summary
+            ranking_payload = {
+                "answer_text": answer_text,
+                "bbox": meta["bbox"],
+                "bbox_source": bbox_source,
+                "source_phrase": source_phrase,
+                "top_tokens": top_tokens,
+                "top_phrases": top_phrases,
+                "token_scores": all_tokens,
+            }
+            write_json(attn_dir / "meta.json", meta)
+            dump_region_to_token_json(ranking_path, ranking_payload)
+            config = {
+                "task_id": task["id"],
+                "session_id": session.session_id,
+                "turn_idx": session.turn_idx,
+                "attn_id": attn_id,
+                "type": task_type,
+                "input": payload,
+                "meta": meta,
+            }
+            write_json(attn_dir / "config.json", config)
+            return {
+                "type": task_type,
+                "turn_idx": session.turn_idx,
+                "attn_id": attn_id,
+                "attn_dir": self._rel(attn_dir),
+                "bbox_overlay_png_url": self._rel(bbox_overlay_path),
+                "region_overlay_png_url": self._rel(region_overlay_path),
+                "region_heatmap_png_url": self._rel(region_heatmap_path),
+                "ranking_json_url": self._rel(ranking_path),
+                "meta": meta,
+                "top_tokens": top_tokens,
+                "top_phrases": top_phrases,
+            }
+        token_span_input = payload.get("token_span")
+        if token_span_input is None:
+            raise ValueError("TOKEN_TO_REGION requires token_span.")
+        heatmap, meta = build_token_to_region_heatmap(
             attention_maps=attention_maps,
             token_span=token_span_input,
             layer=layer,
@@ -401,13 +543,13 @@ class WorkerRuntime:
             "session_id": session.session_id,
             "turn_idx": session.turn_idx,
             "attn_id": attn_id,
-            "type": task["type"],
+            "type": task_type,
             "input": payload,
             "meta": meta,
         }
         write_json(attn_dir / "config.json", config)
         return {
-            "type": task["type"],
+            "type": task_type,
             "turn_idx": session.turn_idx,
             "attn_id": attn_id,
             "attn_dir": self._rel(attn_dir),
@@ -418,15 +560,15 @@ class WorkerRuntime:
 
     def handle_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
         payload = task.get("input_json") or {}
-        ttype = task.get("type")
+        ttype = canonical_task_type(task.get("type"))
         if ttype == "ASK":
             return self.handle_ask(task, payload)
         if ttype == "GROUND":
             return self.handle_ground(task, payload)
-        if ttype == "ATTN_I2T":
-            return self.handle_attention(task, payload, kind="i2t")
-        if ttype == "ATTN_T2I":
-            return self.handle_attention(task, payload, kind="t2i")
+        if ttype == TASK_TYPE_TOKEN_TO_REGION:
+            return self.handle_attention(task, payload, kind=ATTN_KIND_TOKEN_TO_REGION)
+        if ttype == TASK_TYPE_REGION_TO_TOKEN:
+            return self.handle_attention(task, payload, kind=ATTN_KIND_REGION_TO_TOKEN)
         raise ValueError(f"Unsupported task type: {ttype}")
 
 

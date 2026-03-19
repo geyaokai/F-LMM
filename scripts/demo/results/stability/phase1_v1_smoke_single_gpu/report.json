@@ -1,0 +1,141 @@
+{
+  "summary": {
+    "created_at": "2026-03-16 11:24:05",
+    "manifest_path": "/home/hechen/gyk/F-LMM/scripts/demo/manifests/stability_cases.v1.json",
+    "config": "/home/hechen/gyk/F-LMM/configs/qwen/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.py",
+    "checkpoint": "/home/hechen/gyk/F-LMM/checkpoints/frozen_qwen2_5_vl_7b_instruct_unet_sam_l_refcoco_png.pth",
+    "num_samples": 1,
+    "num_success": 1,
+    "num_failed": 0,
+    "artifact_root": "/home/hechen/gyk/F-LMM/scripts/demo/results/stability/phase1_v1_smoke_single_gpu/artifacts",
+    "tag_counts": {
+      "bbox_low_iou": 1,
+      "roi_answer_changed": 1
+    }
+  },
+  "samples": [
+    {
+      "sample_id": "0000_custom_shampoo_room_001",
+      "manifest_index": 0,
+      "source_id": "custom_shampoo_room_001",
+      "notes": "Small bottle on the left dresser, near the round mirror. Good for testing small-object grounding.",
+      "manual_failure_tags": [],
+      "status": "ok",
+      "image_path": "data/custom/shampoo_room.png",
+      "question": "Where is the shampoo?",
+      "history": [],
+      "enable_roi": true,
+      "auto_topk": 1,
+      "timing_s": {
+        "load_image": 0.0077,
+        "ask_pipeline": 5.8528,
+        "total": 5.8605
+      },
+      "session_dir": "sessions/0000_custom_shampoo_room_001",
+      "loaded_image_path": "sessions/0000_custom_shampoo_room_001/images/shampoo_room.png",
+      "raw_answer": "The image does not show any there shampoo might be located.",
+      "answer": "The shampoo is on the dresser, to the left of the mirror.",
+      "roi_answer": "The shampoo is on the dresser, to the left of the mirror.",
+      "verification": {
+        "original_answer": "The image does not show any there shampoo might be located.",
+        "used": true,
+        "roi_answer": "The shampoo is on the dresser, to the left of the mirror.",
+        "roi_bbox": [
+          0,
+          86,
+          584,
+          482
+        ],
+        "roi_prompt": "<|im_start|>system\nsystem You are a helpful assistant.\n\nPlease provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion. Do not output meta UI labels or disclaimers such as \"自动生成\".\n<|im_end|>\n<|im_start|>user\n<|vision_start|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|image_pad|><|vision_end|>\nWhere is the shampoo?\nFocus on the visual context above when answering.\n<|im_end|>\n<|im_start|>assistant\n"
+      },
+      "phrases": [
+        {
+          "index": 0,
+          "text": "shampoo",
+          "char_span": [
+            34,
+            41
+          ],
+          "token_span": [
+            7,
+            8
+          ]
+        }
+      ],
+      "ground_records": [
+        {
+          "index": 0,
+          "phrase": "shampoo",
+          "char_span": [
+            34,
+            41
+          ],
+          "token_span": [
+            7,
+            8
+          ],
+          "bbox": [
+            0,
+            86,
+            584,
+            482
+          ],
+          "overlay_path": "sessions/0000_custom_shampoo_room_001/turns/turn_0000/ground/ground_0000/overlay_00.png",
+          "mask_path": "sessions/0000_custom_shampoo_room_001/turns/turn_0000/ground/ground_0000/mask_00.png",
+          "roi_path": "sessions/0000_custom_shampoo_room_001/turns/turn_0000/ground/ground_0000/roi_00.png"
+        }
+      ],
+      "expectations": {
+        "answer_contains": [
+          "dresser"
+        ],
+        "answer_not_contains": [
+          "bookshelf",
+          "bed"
+        ],
+        "expected_bbox": [
+          112.0,
+          165.0,
+          150.0,
+          247.0
+        ]
+      },
+      "checks": {
+        "answer_contains": [
+          {
+            "text": "dresser",
+            "passed": true
+          }
+        ],
+        "answer_not_contains": [
+          {
+            "text": "bookshelf",
+            "passed": true
+          },
+          {
+            "text": "bed",
+            "passed": true
+          }
+        ],
+        "expected_bbox": [
+          112.0,
+          165.0,
+          150.0,
+          247.0
+        ],
+        "predicted_bbox": [
+          0.0,
+          86.0,
+          584.0,
+          482.0
+        ],
+        "bbox_iou": 0.013473778884737789
+      },
+      "auto_failure_tags": [
+        "roi_answer_changed",
+        "bbox_low_iou"
+      ],
+      "history_turns_after": 1
+    }
+  ]
+}

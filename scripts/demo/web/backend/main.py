@@ -43,7 +43,13 @@ from scripts.demo.interact import (  # noqa: E402
 
 from scripts.demo.web.backend.task_queue.db import connect as tq_connect, init_db as tq_init_db  # noqa: E402
 from scripts.demo.web.backend.task_queue.queue import enqueue_task, get_task  # noqa: E402
-from scripts.demo.web.backend.task_queue.paths import SessionPaths  # noqa: E402
+from scripts.demo.web.backend.task_queue.paths import (  # noqa: E402
+    ATTN_KIND_REGION_TO_TOKEN,
+    ATTN_KIND_TOKEN_TO_REGION,
+    TASK_TYPE_REGION_TO_TOKEN,
+    TASK_TYPE_TOKEN_TO_REGION,
+    SessionPaths,
+)
 from scripts.demo.web.backend.prompt_overrides import apply_prompt_overrides  # noqa: E402
 
 APP_VERSION = "0.1.0"
@@ -186,7 +192,12 @@ class TaskEnqueueRequest(APIModel):
             ]
         },
     )
-    type: Literal['ASK', 'GROUND', 'ATTN_I2T', 'ATTN_T2I'] = Field(..., description='Task type')
+    type: Literal[
+        'ASK',
+        'GROUND',
+        'TOKEN_TO_REGION',
+        'REGION_TO_TOKEN',
+    ] = Field(..., description='Task type')
     session_id: str = Field(..., description='Session identifier')
     payload: Dict[str, Any] = Field(default_factory=dict, description='Task input payload')
     turn_idx: Optional[int] = Field(None, description='Optional turn index for dedupe')
@@ -195,7 +206,12 @@ class TaskEnqueueRequest(APIModel):
 
 # --- Response Models ---
 
-TaskType = Literal["ASK", "GROUND", "ATTN_I2T", "ATTN_T2I"]
+TaskType = Literal[
+    "ASK",
+    "GROUND",
+    "TOKEN_TO_REGION",
+    "REGION_TO_TOKEN",
+]
 TaskStatus = Literal["PENDING", "RUNNING", "DONE", "FAILED"]
 
 
@@ -471,7 +487,10 @@ class SessionStore:
         state.current_image_path = None
         state.last_records = []
         state.ground_id = 0
-        state.attn_counters = {"i2t": 0, "t2i": 0}
+        state.attn_counters = {
+            ATTN_KIND_TOKEN_TO_REGION: 0,
+            ATTN_KIND_REGION_TO_TOKEN: 0,
+        }
         state.turn_idx = 0
 
     def _reset_workspace(self, entry: SessionEntry):
@@ -487,7 +506,10 @@ class SessionStore:
         entry.state.session_dir = session_root
         entry.state.turn_idx = 0
         entry.state.ground_id = 0
-        entry.state.attn_counters = {"i2t": 0, "t2i": 0}
+        entry.state.attn_counters = {
+            ATTN_KIND_TOKEN_TO_REGION: 0,
+            ATTN_KIND_REGION_TO_TOKEN: 0,
+        }
 
     def _remove_dir(self, path: Path):
         try:

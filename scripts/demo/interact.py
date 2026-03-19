@@ -1,4 +1,30 @@
 #!/usr/bin/env python3
+"""
+import 部分
+dataclass 定义
+  - PhraseCandidate        # 存储候选短语及其字符/Token跨度
+  - GroundRecord           # 记录一次 grounding 的输出文件和信息
+  - AskCommand             # 解析 "ask" 命令的参数
+  - SessionState           # 会话状态（模型、当前图像、历史、grounding 记录等）
+
+工具函数
+  - 历史管理 (append_history_entry, clear_history, history_turns)
+  - 答案清理 (detect_answer_artifacts, clean_answer_for_display)
+  - 设备映射解析 (parse_device_map_arg, parse_max_memory_arg, resolve_inference_device)
+  - 模型辅助模块移动 (move_auxiliary_modules)
+  - 模型加载 (load_model)
+  - 图像加载 (load_image, resolve_image_path)
+  - 短语提取 (extract_phrases_via_model, _extract_phrases_spacy, _rerank_phrases_with_model)
+  - Token 偏移处理 (build_offsets, char_to_token, token_span_to_char)
+  - 短语候选构建和去重 (build_phrase_candidates, dedupe_phrase_candidates)
+  - grounding 核心 (perform_ground, perform_ground_custom, mask_to_box, blend_mask, save_ground_outputs)
+  - 图像尺寸适配 (ensure_min_image_size)
+  - 命令处理函数 (handle_load, handle_ask, handle_ground, handle_inspect, handle_cot_resample)
+  - 核心管道 (pipeline_default_ask)
+  - 帮助 (print_help)
+  - 主循环 (main)
+"""
+
 import argparse
 import json
 import os
@@ -12,6 +38,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 try:  # Enable arrow-key editing when readline exists.
     import readline  # noqa: F401
 except ImportError:
@@ -22,7 +52,6 @@ import torch
 from PIL import Image
 from mmengine.config import Config
 from xtuner.registry import BUILDER
-from xtuner.model.utils import guess_load_checkpoint
 
 try:
     import spacy
@@ -32,12 +61,14 @@ except ImportError:
     spacy = None
     _spacy_nlp = None
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 # import pdb;pdb.set_trace()
+from scripts.demo.checkpoint_utils import guess_load_checkpoint  # noqa: E402
 from scripts.demo.utils import colors  # noqa: E402
-from scripts.demo.web.backend.task_queue.paths import SessionPaths  # noqa: E402
+from scripts.demo.web.backend.task_queue.paths import (  # noqa: E402
+    ATTN_KIND_REGION_TO_TOKEN,
+    ATTN_KIND_TOKEN_TO_REGION,
+    SessionPaths,
+)
 
 
 @dataclass
@@ -79,7 +110,12 @@ class SessionState:
     phrases: List[PhraseCandidate] = field(default_factory=list)
     token_offsets: Optional[List[Tuple[int, int]]] = None
     ground_id: int = 0
-    attn_counters: Dict[str, int] = field(default_factory=lambda: {"i2t": 0, "t2i": 0})
+    attn_counters: Dict[str, int] = field(
+        default_factory=lambda: {
+            ATTN_KIND_TOKEN_TO_REGION: 0,
+            ATTN_KIND_REGION_TO_TOKEN: 0,
+        }
+    )
     last_records: List[GroundRecord] = field(default_factory=list)
     history: List[Dict[str, str]] = field(default_factory=list)
     turn_idx: int = 0
@@ -100,7 +136,10 @@ class SessionState:
         self.last_records = []
         self.history.clear()
         self.ground_id = 0
-        self.attn_counters = {"i2t": 0, "t2i": 0}
+        self.attn_counters = {
+            ATTN_KIND_TOKEN_TO_REGION: 0,
+            ATTN_KIND_REGION_TO_TOKEN: 0,
+        }
 
 
 def append_history_entry(session: SessionState, role: str, text: str):
@@ -123,6 +162,38 @@ def clear_history(session: SessionState):
 
 def history_turns(session: SessionState) -> int:
     return len(session.history) // 2
+
+
+ANSWER_ARTIFACT_MARKERS = (
+    "addcriterion",
+    "matchcondition",
+    "guidid",
+    "自动生成",
+)
+
+
+def detect_answer_artifacts(text: str) -> List[str]:
+    lowered = (text or "").lower()
+    hits: List[str] = []
+    for marker in ANSWER_ARTIFACT_MARKERS:
+        if marker.lower() in lowered:
+            hits.append(marker)
+    return hits
+
+
+def clean_answer_for_display(text: str) -> str:
+    text = (text or "").strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    cut = len(text)
+    for marker in ANSWER_ARTIFACT_MARKERS:
+        pos = lowered.find(marker.lower())
+        if pos >= 0:
+            cut = min(cut, pos)
+    cleaned = text[:cut].strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 def parse_device_map_arg(raw_value: Optional[str]) -> Optional[str]:
@@ -401,6 +472,7 @@ def _extract_phrases_spacy(
 
 def _rerank_phrases_with_model(
     model,
+    question: str,
     answer_text: str,
     candidates: List[Tuple[str, Tuple[int, int]]],
     max_tokens: int,
@@ -408,32 +480,54 @@ def _rerank_phrases_with_model(
 ) -> List[Tuple[str, Tuple[int, int]]]:
     if not candidates:
         return []
+    question = str(question or "").strip()
+    answer_text = str(answer_text or "")
     numbered = [f"{i}. {p[0]}" for i, p in enumerate(candidates)]
     override = getattr(model, "phrase_rerank_prompt", None)
     if override:
         try:
             prompt = override.format(
+                question=question,
                 answer=answer_text,
                 candidates="\n".join(numbered),
                 limit=limit,
             )
         except Exception:
             prompt = (
-                f"{override}\n\nAnswer:\n{answer_text}\nCandidates:\n"
+                f"{override}\n\nQuestion:\n{question}\n\nAnswer:\n{answer_text}\nCandidates:\n"
                 + "\n".join(numbered)
                 + f"\nSelect up to {limit}.\n"
             )
     else:
         prompt = (
             f"<|im_start|>system\n"
-            "Given an answer text and its candidate noun phrases, pick the most relevant phrases (keep original text exactly). "
+            "You rerank candidate noun phrases for visual grounding.\n"
+            "The user question defines what matters.\n"
+            "The selected phrases will be used for image grounding / segmentation, so prioritize concrete visible entities in the image, "
+            "such as objects, people, animals, body parts, or clearly visible scene items.\n"
+            "Prefer the entity that most directly answers the question, then keep closely related visible support entities if helpful.\n"
+            "Avoid abstract concepts, pure attributes, colors, sizes, positions, directions, counts, pronouns, and generic filler unless no better visible entity exists.\n"
+            "Keep the original candidate text exactly as written. Do not invent new phrases.\n"
             f'Return JSON only: {{"phrases": ["phrase_a", ...]}} with at most {limit} items.\n'
-            "Do not invent new phrases.\n"
             "<|im_end|>\n"
             "<|im_start|>user\n"
+            "Example 1:\n"
+            "Question: Where is the shampoo?\n"
+            "Answer: The shampoo is on the dresser, to the left of the mirror.\n"
+            "Candidates:\n"
+            "0. shampoo\n1. dresser\n2. left\n3. mirror\n"
+            'Output: {"phrases": ["shampoo", "dresser", "mirror"]}\n\n'
+            "Example 2:\n"
+            "Question: What color is the car?\n"
+            "Answer: The car is red and parked beside a tree.\n"
+            "Candidates:\n"
+            "0. car\n1. red\n2. tree\n"
+            'Output: {"phrases": ["car", "tree"]}\n\n'
+            "Now solve the real case.\n"
+            f"Question:\n{question}\n"
             f"Answer:\n{answer_text}\n"
             "Candidates:\n" + "\n".join(numbered) + "\n"
-            f"Select up to {limit}.\n"
+            f"Select up to {limit} phrases. Prefer visible entities most relevant to the question.\n"
             "<|im_end|>\n"
             "<|im_start|>assistant\n"
         )
@@ -467,37 +561,67 @@ def _rerank_phrases_with_model(
             chosen = []
     if not chosen:
         return candidates[:limit]
-    chosen_set = {c.lower().strip() for c in chosen}
-    filtered = [p for p in candidates if p[0].lower() in chosen_set]
+    normalized_candidates = []
+    for candidate in candidates:
+        key = candidate[0].lower().strip()
+        normalized_candidates.append((key, candidate))
+
+    filtered: List[Tuple[str, Tuple[int, int]]] = []
+    seen = set()
+    for item in chosen:
+        key = item.lower().strip()
+        matched = None
+        for cand_key, candidate in normalized_candidates:
+            if cand_key == key:
+                matched = candidate
+                break
+        if matched is None:
+            for cand_key, candidate in normalized_candidates:
+                if key and (key in cand_key or cand_key in key):
+                    matched = candidate
+                    break
+        if matched is None:
+            continue
+        matched_key = matched[0].lower().strip()
+        if matched_key in seen:
+            continue
+        filtered.append(matched)
+        seen.add(matched_key)
+
     if not filtered:
         return candidates[:limit]
     return filtered[:limit]
 
 
 def extract_phrases_via_model(
-    model, answer_text: str, max_tokens: int, limit: int
+    model, question: str, answer_text: str, max_tokens: int, limit: int
 ) -> List[Tuple[str, Tuple[int, int]]]:
+    question = str(question or "").strip()
+    answer_text = str(answer_text or "")
     spacy_candidates = _extract_phrases_spacy(answer_text, limit=limit * 3)
     if spacy_candidates:
         return _rerank_phrases_with_model(
-            model, answer_text, spacy_candidates, max_tokens, limit
+            model, question, answer_text, spacy_candidates, max_tokens, limit
         )
     override = getattr(model, "phrase_extract_prompt", None)
     if override:
         try:
-            prompt = override.format(answer=answer_text)
+            prompt = override.format(question=question, answer=answer_text)
         except Exception:
-            prompt = f"{override}\n\nAnswer:\n{answer_text}\n"
+            prompt = f"{override}\n\nQuestion:\n{question}\n\nAnswer:\n{answer_text}\n"
     else:
         prompt = (
             "<|im_start|>system\n"
             "You extract distinct noun phrases from the assistant answer. "
+            "Prefer concise phrases that refer to visible entities relevant to the user question. "
             'Return pure JSON like {"phrases": ["phrase a", ...]}.\n'
             "<|im_end|>\n"
             "<|im_start|>user\n"
+            "Question:\n"
+            f"{question}\n"
             "Answer:\n"
             f"{answer_text}\n"
-            "List concise noun phrases that appear in the answer. JSON only.\n"
+            "List concise noun phrases that appear in the answer and are best suited for visual grounding. JSON only.\n"
             "<|im_end|>\n"
             "<|im_start|>assistant\n"
         )
@@ -609,6 +733,46 @@ def build_phrase_candidates(
             )
         )
     return candidates
+
+
+def dedupe_phrase_candidates(
+    candidates: List[PhraseCandidate],
+) -> List[PhraseCandidate]:
+    """Remove duplicate/contained phrase candidates while preserving display order."""
+    if not candidates:
+        return candidates
+    indexed = list(enumerate(candidates))
+    # Prefer longer spans; tie-break by earlier start to stabilize selection.
+    indexed.sort(
+        key=lambda item: (
+            -max(0, item[1].char_span[1] - item[1].char_span[0]),
+            item[1].char_span[0],
+        )
+    )
+    kept_indices: set[int] = set()
+    kept_spans: List[Tuple[int, int]] = []
+    seen_text: set[str] = set()
+    for idx, cand in indexed:
+        text = (cand.text or "").strip()
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen_text:
+            continue
+        start, end = cand.char_span
+        if end <= start:
+            continue
+        contained = False
+        for ks, ke in kept_spans:
+            if start >= ks and end <= ke:
+                contained = True
+                break
+        if contained:
+            continue
+        kept_indices.add(idx)
+        kept_spans.append((start, end))
+        seen_text.add(key)
+    return [cand for idx, cand in enumerate(candidates) if idx in kept_indices]
 
 
 def _find_first_span_ci(
@@ -1025,7 +1189,10 @@ def pipeline_default_ask(
     resolved_turn_idx = history_turns(session) if turn_idx is None else int(turn_idx)
     session.turn_idx = resolved_turn_idx
     session.ground_id = 0
-    session.attn_counters = {"i2t": 0, "t2i": 0}
+    session.attn_counters = {
+        ATTN_KIND_TOKEN_TO_REGION: 0,
+        ATTN_KIND_REGION_TO_TOKEN: 0,
+    }
     session.session_paths.turn_dir(session.turn_idx).mkdir(parents=True, exist_ok=True)
     if not question:
         raise ValueError("Question must not be empty.")
@@ -1036,60 +1203,81 @@ def pipeline_default_ask(
         max_new_tokens=session.args.max_new_tokens,
     )
     answer_text = output["output_text"]
+    raw_answer_artifacts = detect_answer_artifacts(answer_text)
+    display_raw_answer = clean_answer_for_display(answer_text) or answer_text
     offsets = build_offsets(session.model.tokenizer, answer_text)
     print(f"[Debug]  anwer_text: {answer_text}")
     phrase_texts = extract_phrases_via_model(
         session.model,
+        question,
         answer_text,
         session.args.phrase_max_tokens,
         session.args.max_phrases,
     )
     print(f"[Debug] Extracted phrases: {[p[0] for p in phrase_texts]}")
     candidates = build_phrase_candidates(answer_text, phrase_texts, offsets)
+    candidates = dedupe_phrase_candidates(candidates)
     print(f"[Debug] Built {len(candidates)} phrase candidates.")
     session.last_answer = output
     session.token_offsets = offsets
     session.phrases = candidates
     session.last_records = []
-    append_history_entry(session, "user", question)
-    final_answer = answer_text
-    verification: Dict[str, Any] = {"original_answer": answer_text, "used": False}
+    final_answer = display_raw_answer
+    verification: Dict[str, Any] = {
+        "original_answer": answer_text,
+        "raw_answer_cleaned": display_raw_answer,
+        "raw_answer_artifacts": raw_answer_artifacts,
+        "used": False,
+    }
     if auto_topk > 0 and candidates:
         indices = list(range(min(auto_topk, len(candidates))))
-        records = perform_ground(session, indices)
-        bbox = _first_bbox_record(records)
-        verification.update(
-            {
-                "used": bool(records) if enable_roi else False,
-            }
-        )
-        if enable_roi and bbox:
-            try:
-                roi_result = session.model.visual_cot_resample(
-                    image=session.current_image,
-                    question=question,
-                    bbox=bbox,
-                    answer_cache=session.last_answer,
-                    max_new_tokens=session.args.max_new_tokens,
-                    extra_prompt=getattr(session.model, "roi_extra_prompt", ""),
-                )
-                roi_answer = roi_result.get("answer_text", "")
-                if roi_answer:
-                    final_answer = roi_answer
-                    verification.update(
-                        {
-                            "roi_answer": roi_answer,
-                            "roi_bbox": roi_result.get("roi_bbox", bbox),
-                            "roi_prompt": roi_result.get("prompt"),
-                        }
+        try:
+            records = perform_ground(session, indices)
+            bbox = _first_bbox_record(records)
+            verification.update(
+                {
+                    "used": bool(records) if enable_roi else False,
+                }
+            )
+            if enable_roi and bbox:
+                try:
+                    roi_result = session.model.visual_cot_resample(
+                        image=session.current_image,
+                        question=question,
+                        bbox=bbox,
+                        answer_cache=session.last_answer,
+                        max_new_tokens=session.args.max_new_tokens,
+                        extra_prompt=getattr(session.model, "roi_extra_prompt", ""),
                     )
-            except Exception as exc:
-                verification["error"] = str(exc)
+                    roi_answer = roi_result.get("answer_text", "")
+                    roi_answer_artifacts = detect_answer_artifacts(roi_answer)
+                    roi_answer_cleaned = clean_answer_for_display(roi_answer) or roi_answer
+                    if roi_answer:
+                        verification.update(
+                            {
+                                "roi_answer": roi_answer,
+                                "roi_answer_cleaned": roi_answer_cleaned,
+                                "roi_answer_artifacts": roi_answer_artifacts,
+                                "roi_bbox": roi_result.get("roi_bbox", bbox),
+                                "roi_prompt": roi_result.get("prompt"),
+                            }
+                        )
+                        if roi_answer_artifacts and not raw_answer_artifacts and display_raw_answer:
+                            verification["roi_answer_accepted"] = False
+                            verification["roi_rejected_reason"] = "answer_artifact"
+                        else:
+                            final_answer = roi_answer_cleaned
+                            verification["roi_answer_accepted"] = True
+                except Exception as exc:
+                    verification["error"] = str(exc)
+        except Exception as exc:
+            verification["error"] = str(exc)
+            verification["used"] = False
+    append_history_entry(session, "user", question)
     append_history_entry(session, "assistant", final_answer)
-    session.last_answer["output_text"] = final_answer
     return {
         "answer": final_answer,
-        "raw_answer": answer_text,
+        "raw_answer": display_raw_answer,
         "original_answer": answer_text,
         "roi_answer": verification.get("roi_answer"),
         "roi_bbox": verification.get("roi_bbox"),

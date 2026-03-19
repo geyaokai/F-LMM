@@ -74,7 +74,7 @@ python -m scripts.demo.web.backend.task_queue.worker --sleep 0.5
 
 ## 4) Directory layout
 - `results/sessions/{session_id}/turns/turn_{idx}/ground/ground_{id}/...`
-- `results/sessions/{session_id}/turns/turn_{idx}/attn/{i2t|t2i}/attn_{id}/...`
+- `results/sessions/{session_id}/turns/turn_{idx}/attn/{token_to_region|region_to_token}/attn_{id}/...`
 - Uploaded/loaded images reside under `results/sessions/{session_id}/images/`.
 - Queue DB: `results/task_queue.db` (or `FLMM_WEB_TASK_DB`).
 - Prompt presets live in `scripts/demo/web/backend/prompt/`:
@@ -120,3 +120,61 @@ curl -X POST http://localhost:9000/tasks \
 - `raw_answer`: the first answer (before ROI).
 - `answer`: the final answer (equals `raw_answer` when `enable_roi=false`).
 - `roi_answer`: still returned if ROI was used (optional, for debugging).
+
+## 7) TOKEN_TO_REGION task
+`TOKEN_TO_REGION` aggregates one output token span back to the image patch grid and writes a spatial evidence heatmap.
+
+Typical payload:
+- `token_span`: `[start, end]` in generated answer token indices.
+- `prompt` or `question`: required only when there is no cached answer yet.
+- `layer` / `head` / `reduction`: optional analysis controls.
+
+Worker outputs:
+- `results/sessions/{session_id}/turns/turn_{idx}/attn/token_to_region/attn_{id}/overlay.png`
+- `results/sessions/{session_id}/turns/turn_{idx}/attn/token_to_region/attn_{id}/heatmap.png`
+- `results/sessions/{session_id}/turns/turn_{idx}/attn/token_to_region/attn_{id}/meta.json`
+
+## 8) REGION_TO_TOKEN task
+`REGION_TO_TOKEN` reuses the cached answer attention maps and projects a selected region back to the most related generated tokens / phrases.
+
+Supported payloads:
+- `bbox`: `[x1, y1, x2, y2]` in original image coordinates.
+- `record_index`: reuse the latest grounding record bbox for this session.
+- `prompt` or `question`: required only when there is no cached answer yet.
+- `topk`: optional, default `8`.
+- `layer` / `head` / `reduction`: optional analysis controls, same meaning as `TOKEN_TO_REGION`.
+
+### Queue example with direct bbox
+```bash
+curl -X POST http://localhost:9000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "REGION_TO_TOKEN",
+    "session_id": "YOUR_SESSION_ID",
+    "payload": {
+      "bbox": [112, 165, 150, 247],
+      "topk": 8
+    }
+  }'
+```
+
+### Queue example reusing the latest grounding result
+```bash
+curl -X POST http://localhost:9000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "REGION_TO_TOKEN",
+    "session_id": "YOUR_SESSION_ID",
+    "payload": {
+      "record_index": 0,
+      "topk": 8
+    }
+  }'
+```
+
+Worker outputs:
+- `results/sessions/{session_id}/turns/turn_{idx}/attn/region_to_token/attn_{id}/bbox_overlay.png`
+- `results/sessions/{session_id}/turns/turn_{idx}/attn/region_to_token/attn_{id}/region_overlay.png`
+- `results/sessions/{session_id}/turns/turn_{idx}/attn/region_to_token/attn_{id}/region_heatmap.png`
+- `results/sessions/{session_id}/turns/turn_{idx}/attn/region_to_token/attn_{id}/ranking.json`
+- `results/sessions/{session_id}/turns/turn_{idx}/attn/region_to_token/attn_{id}/meta.json`
