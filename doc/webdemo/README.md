@@ -9,10 +9,16 @@
 
 本文串联前端、后端与模型侧（`frozen_qwen.py`）的主要流程，便于排查「回答对但找不到 / 代词不接上下文」等问题。
 
+说明：
+
+- 仓库内旧的 React 原型前端已在清理中移除。
+- 本文里涉及旧前端的部分只保留交互流程说明，不再假设对应源码仍在仓库中。
+- 当前真实前端不在本仓库内。
+
 ## 组件与入口
-- 前端：`scripts/demo/web/frontend/src/App.tsx`  
-  - 左侧对话区；右侧图像展示、文件/URL 上传。  
-  - 调用 `/session/create` → `/load_image` → `/ask` → `/ground`。
+- 前端：仓库内旧原型曾位于 `scripts/demo/web/frontend/src/App.tsx`，现已移除
+  - 历史交互形态是左侧对话区；右侧图像展示、文件/URL 上传。
+  - 历史原型调用链是 `/session/create` → `/load_image` → `/ask` → `/ground`。
 - 后端：`scripts/demo/web/backend/main.py`  
   - 基于 FastAPI，维护 SessionStore；串行执行模型（`backend.model_lock`）。  
   - 关键 handler：`ask` 使用 `pipeline_default_ask`；`ground` 复用 `handle_ground`。
@@ -57,8 +63,8 @@
   - `/ask` 调 `pipeline_default_ask`，`/ground` 调 `handle_ground`。  
 - 模型实现：`flmm/models/frozen_qwen.py`  
   - `answer` / `ground` / `visual_cot_resample`，以及 tokenizer 设置。  
-- 前端调用：`scripts/demo/web/frontend/src/App.tsx`  
-  - Session 管理、提问、ground 触发及结果展示。
+- 历史前端原型：原 `scripts/demo/web/frontend/src/App.tsx`（已移除）
+  - 仅保留其交互流程说明：Session 管理、提问、ground 触发及结果展示。
 
 ## 可选改进（未默认启用）
 - 代词兜底：若本轮无短语可用，自动复用上一轮的 bbox 再跑 `visual_cot_resample`。  

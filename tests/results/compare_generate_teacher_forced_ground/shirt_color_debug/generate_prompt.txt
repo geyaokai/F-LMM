@@ -1,7 +1,0 @@
-<|im_start|>system
-system You are a helpful assistant.
-
-Please provide a normal answer directly, and do not output training labels, placeholders, or irrelevant characters such as addCriterion. Do not output meta UI labels or disclaimers such as "自动生成".<|im_end|>
-<|im_start|>user
-<|vision_start|><|image_pad|><|vision_end|>what is the color of the man's shirt?<|im_end|>
-<|im_start|>assistant

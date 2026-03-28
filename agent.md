@@ -6,7 +6,7 @@
 
 ## 1. 当前真实情况
 
-- 截至 2026-03-23，当前实际在用的前端不在本仓库里；`scripts/demo/web/frontend/` 是废弃原型，只能参考接口，不应默认继续在那上面开发。
+- 截至 2026-03-23，当前实际在用的前端不在本仓库里；仓库内旧的 `scripts/demo/web/frontend/` 废弃原型已移除，不应默认在该路径继续开发。
 - 当前实际后端入口是 `scripts/demo/web/backend/main.py`，异步推理由 `scripts/demo/web/backend/task_queue/worker.py` 执行。
 - 截至 2026-03-23，服务器上的 FastAPI 已验证可直接通过内网 IP 访问，不依赖 VS Code port forwarding：
   - 服务监听 `0.0.0.0:9000`
@@ -35,7 +35,7 @@
 
 ## 3. 工作边界
 
-- 不要默认修改 `scripts/demo/web/frontend/`，除非用户明确说要修废弃原型。
+- 不要把已移除的 `scripts/demo/web/frontend/` 原型路径当作现有开发入口；除非用户明确要求恢复该原型，否则不要在该路径继续开发。
 - 不要把“能跑 demo”和“适合长期运行的 runtime”混为一谈；runtime 任务需要把启动、环境、依赖、输出目录、版本归档一起固化。
 - 如果 runtime 是从独立 bundle 解压目录启动，那么后续修改开发中的 `F-LMM/` 仓库代码，不应直接影响已部署 runtime；若 runtime 直接跑在当前仓库或继续引用开发仓库里的可变资源，则会受影响。
 - 不要把纠错层和 runtime 打包同时大改；纠错层排在 runtime 稳定之后。

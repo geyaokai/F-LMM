@@ -203,16 +203,12 @@ sam_cache/
 *.tmp
 *.temp
 
-# Web frontend (Vite/React)
-scripts/demo/web/frontend/node_modules/
-scripts/demo/web/frontend/dist/
-scripts/demo/web/frontend/.vite/
-scripts/demo/web/frontend/.env.local
-scripts/demo/web/frontend/.env.*
+# Deprecated in-repo web prototype
+scripts/demo/web/frontend/
 
-# Local runtime and demo outputs
+# Local runtime and generated outputs
 artifacts/
-results/sessions/
-results/task_queue.db*
-results/smoke_test_*.json
+results/
+tests/results/
+scripts/demo/results/
 scripts/demo/showcase_bundle.v1.tar.gz

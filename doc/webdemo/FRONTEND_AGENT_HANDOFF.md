@@ -50,10 +50,10 @@
 - `scripts/demo/web/backend/task_queue/worker.py`
   - 真正执行异步任务的 worker
   - 支持 `ASK`、`GROUND`、`TOKEN_TO_REGION`、`REGION_TO_TOKEN`
-- `scripts/demo/web/frontend/src/`
-  - 当前前端原型
-  - 只覆盖基本问答、图片上传、ground 展示
-  - 还没有完整 explainable 前端
+- `scripts/demo/web/frontend/src/`（历史原型路径，已从仓库移除）
+  - 旧原型只覆盖基本问答、图片上传、ground 展示
+  - 可参考其曾承担的交互边界，但不要假设源码仍在仓库内
+  - 当前真实前端需要按本文档接口重新实现
 - `scripts/demo/interact.py`
   - CLI 主逻辑
   - backend/worker 本质上都在复用这里的流水线
@@ -426,9 +426,9 @@ python -m scripts.demo.web.backend.task_queue.worker --sleep 0.5
 
 `path` / `session_dir` 更适合调试，不适合作为浏览器最终访问地址。
 
-### 7.4 当前原型前端只覆盖同步接口
+### 7.4 仓库内旧原型前端只覆盖同步接口
 
-`scripts/demo/web/frontend/src/App.tsx` 现在主要是参考实现。
+原 `scripts/demo/web/frontend/src/App.tsx` 现在只作为历史参考说明；仓库内源码已移除。
 
 它能说明：
 
@@ -509,4 +509,4 @@ worker / backend 会把结果写到：
 - backend 提供会话、静态文件和任务入队
 - worker 提供真正的推理和 explainable 计算
 - 前端以后应该以异步 `/tasks` 为主，而不是把 `/ask` 当唯一入口
-- `scripts/demo/web/frontend/src/App.tsx` 只能当参考原型，不要把它当最终架构
+- 原 `scripts/demo/web/frontend/src/App.tsx` 只能当历史原型说明，不要把它当最终架构

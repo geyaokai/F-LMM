@@ -199,7 +199,7 @@ def write_runtime_metadata(
             "start_worker_script": "deployment/runtime/bin/start_worker.sh",
         },
         "notes": [
-            "Deprecated frontend scripts/demo/web/frontend is intentionally excluded.",
+            "Historical in-repo frontend prototype path is excluded when present.",
             "Model checkpoints and data are excluded by default; add --include-model-assets when needed.",
         ],
     }

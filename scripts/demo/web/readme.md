@@ -11,9 +11,9 @@
   - SQLite task queue
   - worker
 - `frontend/`
-  - React + Vite 前端原型
-  - 当前主要覆盖图片上传、问答、ground 展示
-  - 还不是完整 explainable 前端
+  - 仓库内旧的 React + Vite 前端原型目录
+  - 现已从仓库移除
+  - 相关接口与交互说明保留在 `doc/webdemo/`
 
 推荐先看这些文档，而不是直接从代码猜：
 
@@ -36,22 +36,12 @@
 
 ### Frontend
 
-```bash
-cd /home/hechen/gyk/F-LMM/scripts/demo/web/frontend
-npm install
-npm run dev -- --host --port 5173
-```
+仓库内旧前端原型已移除，本目录不再提供前端启动命令。
 
-如需指定后端：
+如需接入新的前端实现，请阅读：
 
-```bash
-export VITE_API_BASE=http://127.0.0.1:9000
-```
-
-默认情况下：
-
-- 开发端口是 `5173` / `4173` 时，前端会默认请求 `http://127.0.0.1:9000`
-- 结果资源通过 backend 挂载的 `/results/...` 访问
+- `../../../doc/webdemo/FRONTEND_AGENT_HANDOFF.md`
+- `../../../doc/webdemo/README.md`
 
 ## 维护原则
 

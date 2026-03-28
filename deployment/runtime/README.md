@@ -4,7 +4,7 @@
 
 明确边界：
 
-- 不修改也不依赖 `scripts/demo/web/frontend/`
+- 不修改也不依赖仓库内已移除的 `scripts/demo/web/frontend/` 历史原型路径
 - bundle 默认排除废弃前端、`results/`、测试产物和 `.git/`
 - `checkpoints/` 和 `data/` 默认也不打进包里，避免生成巨型归档；需要时用 `--include-model-assets`
 

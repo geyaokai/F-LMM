@@ -33,7 +33,7 @@
 
 ### 2.1 前后端现状
 
-- 当前真实在用的前端不在仓库内，`scripts/demo/web/frontend/` 是废弃原型。
+- 当前真实在用的前端不在仓库内；仓库内旧的 `scripts/demo/web/frontend/` 废弃原型已移除。
 - 当前真实后端入口是 `scripts/demo/web/backend/main.py`。
 - worker 入口是 `scripts/demo/web/backend/task_queue/worker.py`。
 
