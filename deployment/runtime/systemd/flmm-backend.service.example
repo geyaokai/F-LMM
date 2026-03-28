@@ -1,0 +1,14 @@
+[Unit]
+Description=F-LMM Runtime Backend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=__RUNTIME_ROOT__
+EnvironmentFile=__RUNTIME_ROOT__/deployment/runtime/.env
+ExecStart=/usr/bin/env bash __RUNTIME_ROOT__/deployment/runtime/bin/start_backend.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

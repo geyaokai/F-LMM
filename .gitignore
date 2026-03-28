@@ -196,6 +196,8 @@ sam_cache/
 !images/*.png
 !images/*.jpg
 !images/*.svg
+!scripts/demo/showcase_bundle/images/*.png
+!scripts/demo/showcase_bundle/images/*.jpg
 
 # Temporary training files
 *.tmp
@@ -207,3 +209,10 @@ scripts/demo/web/frontend/dist/
 scripts/demo/web/frontend/.vite/
 scripts/demo/web/frontend/.env.local
 scripts/demo/web/frontend/.env.*
+
+# Local runtime and demo outputs
+artifacts/
+results/sessions/
+results/task_queue.db*
+results/smoke_test_*.json
+scripts/demo/showcase_bundle.v1.tar.gz

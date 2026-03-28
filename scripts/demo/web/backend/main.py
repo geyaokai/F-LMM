@@ -39,6 +39,7 @@ from scripts.demo.interact import (  # noqa: E402
     parse_args as cli_parse_args,
     perform_ground_custom,
     pipeline_default_ask,
+    serialize_phrase_candidate,
 )
 
 from scripts.demo.web.backend.task_queue.db import connect as tq_connect, init_db as tq_init_db  # noqa: E402
@@ -226,6 +227,12 @@ class ImageInfo(BaseModel):
     width: int = Field(..., description="Image width in pixels.")
     height: int = Field(..., description="Image height in pixels.")
     url: Optional[str] = Field(None, description="Public URL for the image.")
+    original_width: Optional[int] = Field(None, description="Original width before backend preprocessing.")
+    original_height: Optional[int] = Field(None, description="Original height before backend preprocessing.")
+    processed_width: Optional[int] = Field(None, description="Width actually used by the backend.")
+    processed_height: Optional[int] = Field(None, description="Height actually used by the backend.")
+    auto_resized: bool = Field(False, description="Whether the backend downscaled the image before inference.")
+    resize_scale: float = Field(1.0, description="Uniform resize scale applied by the backend.")
 
 
 class SessionPayload(BaseModel):
@@ -244,6 +251,14 @@ class PhrasePayload(BaseModel):
     text: str = Field(..., description="Phrase text.")
     char_span: List[int] = Field(default_factory=list, description="Character span of the phrase.")
     token_span: List[int] = Field(default_factory=list, description="Token span of the phrase.")
+    mention_text: Optional[str] = Field(None, description="Original mention text used for grounding.")
+    mention_char_span: Optional[List[int]] = Field(None, description="Character span of the original mention.")
+    mention_token_span: Optional[List[int]] = Field(None, description="Token span of the original mention.")
+    concept_text: Optional[str] = Field(None, description="Normalized discrete visual concept for ontology lookup.")
+    concept_char_span: Optional[List[int]] = Field(None, description="Character span of the normalized concept.")
+    concept_token_span: Optional[List[int]] = Field(None, description="Token span of the normalized concept.")
+    concept_lemma: Optional[str] = Field(None, description="Normalized lemma for concept lookup.")
+    concept_source: Optional[str] = Field(None, description="How the concept was derived.")
 
 
 class GroundRecord(BaseModel):
@@ -485,6 +500,9 @@ class SessionStore:
         state.reset_answer()
         state.current_image = None
         state.current_image_path = None
+        state.current_image_original_size = None
+        state.current_image_auto_resized = False
+        state.current_image_resize_scale = 1.0
         state.last_records = []
         state.ground_id = 0
         state.attn_counters = {
@@ -598,6 +616,7 @@ def build_args_from_env() -> argparse.Namespace:
         "FLMM_WEB_PHRASE_MAX_TOKENS", args.phrase_max_tokens
     )
     args.max_phrases = env_int("FLMM_WEB_MAX_PHRASES", args.max_phrases)
+    args.max_image_side = env_int("FLMM_WEB_MAX_IMAGE_SIDE", args.max_image_side)
     args.max_history_turns = env_int(
         "FLMM_WEB_MAX_HISTORY_TURNS", args.max_history_turns
     )
@@ -725,6 +744,12 @@ EXAMPLE_SESSION_PAYLOAD = {
         "width": 1024,
         "height": 768,
         "url": EXAMPLE_IMAGE_URL,
+        "original_width": 2048,
+        "original_height": 1536,
+        "processed_width": 1024,
+        "processed_height": 768,
+        "auto_resized": True,
+        "resize_scale": 0.5,
     },
     "created_at": "2026-01-16T12:34:56.000Z",
     "last_active": "2026-01-16T12:35:10.000Z",
@@ -796,7 +821,6 @@ EXAMPLE_TASK = {
     "created_at": "2026-01-16T12:34:56.000Z",
     "updated_at": "2026-01-16T12:34:58.000Z",
 }
-
 EXAMPLE_HEALTH_RESPONSE = build_response(
     data={"version": APP_VERSION, "sessions": 3}
 )
@@ -889,10 +913,37 @@ def image_info(backend: BackendState, session: SessionState) -> Optional[Dict[st
     if session.current_image is None:
         return None
     width, height = session.current_image.size
+    original_width = width
+    original_height = height
+    if session.current_image_original_size:
+        original_width, original_height = session.current_image_original_size
     path_str = str(session.current_image_path) if session.current_image_path else None
     name = session.current_image_path.name if session.current_image_path else None
     url = backend.result_url(session.current_image_path) if session.current_image_path else None
-    return {"name": name, "path": path_str, "width": width, "height": height, "url": url}
+    return {
+        "name": name,
+        "path": path_str,
+        "width": width,
+        "height": height,
+        "url": url,
+        "original_width": original_width,
+        "original_height": original_height,
+        "processed_width": width,
+        "processed_height": height,
+        "auto_resized": bool(session.current_image_auto_resized),
+        "resize_scale": float(session.current_image_resize_scale or 1.0),
+    }
+
+
+def image_load_message(session: SessionState) -> str:
+    image = image_info(backend, session)
+    if not image or not image.get("auto_resized"):
+        return "Image loaded."
+    return (
+        "Image loaded. "
+        f"Auto-resized {image['original_width']}x{image['original_height']} -> "
+        f"{image['processed_width']}x{image['processed_height']} for inference."
+    )
 
 
 def to_native(obj: Any) -> Any:
@@ -930,14 +981,7 @@ def session_payload(backend: BackendState, entry: SessionEntry) -> Dict[str, Any
 def build_phrase_payload(session: SessionState) -> List[Dict[str, Any]]:
     payload = []
     for idx, candidate in enumerate(session.phrases):
-        payload.append(
-            {
-                "index": idx,
-                "text": candidate.text,
-                "char_span": candidate.char_span,
-                "token_span": candidate.token_span,
-            }
-        )
+        payload.append(serialize_phrase_candidate(candidate, index=idx))
     return payload
 
 
@@ -969,7 +1013,6 @@ def ground_payload(backend: BackendState, session: SessionState) -> Dict[str, An
         "round_dir": backend.relative_result_path(ground_dir),
         "round_url": backend.result_url(ground_dir),
     }
-
 
 def select_auto_phrases(session: SessionState, limit: int) -> List[int]:
     if not session.phrases:
@@ -1086,11 +1129,13 @@ def create_session(request: SessionCreateRequest):
     """Create a new session, optionally preloading an image."""
     try:
         entry = backend.session_store.create_session()
+        message = ""
         if request.image_path or request.image_base64:
             source = resolve_image_source(entry.state, request.image_path, request.image_base64)
             with entry.lock:
                 handle_load(entry.state, source)
-        return build_response(data=session_payload(backend, entry))
+            message = image_load_message(entry.state)
+        return build_response(data=session_payload(backend, entry), message=message)
     except Exception as exc:
         LOGGER.exception("Failed to create session: %s", exc)
         return error_response(str(exc))
@@ -1130,7 +1175,7 @@ def load_image(request: LoadImageRequest):
             handle_load(entry.state, source)
         return build_response(
             data=session_payload(backend, entry),
-            message="Image loaded.",
+            message=image_load_message(entry.state),
         )
     except Exception as exc:
         LOGGER.exception("Load image failed: %s", exc)

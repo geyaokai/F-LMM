@@ -27,6 +27,7 @@ from scripts.demo.interact import (  # noqa: E402
     load_model,
     mask_to_box,
     resolve_phrase_to_spans,
+    serialize_phrase_candidate,
 )
 from scripts.demo.token_to_region import (  # noqa: E402
     build_token_to_region_heatmap,
@@ -194,11 +195,7 @@ def select_phrase(
     )
 
     candidate_payload = [
-        {
-            "text": cand.text,
-            "char_span": [int(cand.char_span[0]), int(cand.char_span[1])],
-            "token_span": [int(cand.token_span[0]), int(cand.token_span[1])],
-        }
+        serialize_phrase_candidate(cand)
         for cand in candidates
     ]
 

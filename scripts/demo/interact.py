@@ -54,18 +54,13 @@ from PIL import Image
 from mmengine.config import Config
 from xtuner.registry import BUILDER
 
-try:
-    import spacy
-
-    _spacy_nlp = None
-    _spacy_warned = False
-except ImportError:
-    spacy = None
-    _spacy_nlp = None
-    _spacy_warned = False
-
 # import pdb;pdb.set_trace()
 from scripts.demo.checkpoint_utils import guess_load_checkpoint  # noqa: E402
+from scripts.demo.concept_normalizer import (  # noqa: E402
+    derive_visual_concept,
+    extract_spacy_visual_phrases,
+    get_spacy_nlp,
+)
 from scripts.demo.utils import colors  # noqa: E402
 from scripts.demo.web.backend.task_queue.paths import (  # noqa: E402
     ATTN_KIND_REGION_TO_TOKEN,
@@ -126,12 +121,64 @@ _PHRASE_LEADING_WORDS = {
     "its",
 }
 
+_INVALID_VISUAL_PHRASE_WORDS = {
+    "a",
+    "an",
+    "the",
+    "this",
+    "that",
+    "these",
+    "those",
+    "he",
+    "she",
+    "it",
+    "they",
+    "them",
+    "his",
+    "her",
+    "hers",
+    "its",
+    "their",
+    "there",
+    "here",
+    "one",
+    "ones",
+    "something",
+    "anything",
+    "everything",
+    "nothing",
+    "scene",
+    "image",
+    "photo",
+    "picture",
+    "view",
+    "setting",
+    "environment",
+    "area",
+    "object",
+    "objects",
+    "item",
+    "items",
+    "stuff",
+    "thing",
+    "things",
+    "pair",
+    "piece",
+}
+
+_LEADING_ARTICLES = ("a ", "an ", "the ")
+
 
 @dataclass
 class PhraseCandidate:
     text: str
     char_span: Tuple[int, int]
     token_span: Tuple[int, int]
+    concept_text: Optional[str] = None
+    concept_char_span: Optional[Tuple[int, int]] = None
+    concept_token_span: Optional[Tuple[int, int]] = None
+    concept_lemma: Optional[str] = None
+    concept_source: Optional[str] = None
 
 
 @dataclass
@@ -155,6 +202,16 @@ class AskCommand:
 
 
 @dataclass
+class LoadedImageInfo:
+    original_width: int
+    original_height: int
+    processed_width: int
+    processed_height: int
+    auto_resized: bool
+    resize_scale: float
+
+
+@dataclass
 class SessionState:
     model: Any
     args: argparse.Namespace
@@ -162,6 +219,9 @@ class SessionState:
     session_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     current_image: Optional[Image.Image] = None
     current_image_path: Optional[Path] = None
+    current_image_original_size: Optional[Tuple[int, int]] = None
+    current_image_auto_resized: bool = False
+    current_image_resize_scale: float = 1.0
     last_answer: Optional[dict] = None
     phrases: List[PhraseCandidate] = field(default_factory=list)
     token_offsets: Optional[List[Tuple[int, int]]] = None
@@ -383,6 +443,12 @@ def parse_args():
     parser.add_argument("--inspect-prompt", default="Describe this region in detail.")
     parser.add_argument("--no-sam", action="store_true", help="Skip SAM refinement.")
     parser.add_argument(
+        "--max-image-side",
+        type=int,
+        default=0,
+        help="Downscale oversized images so their longest side is <= this value (0 disables).",
+    )
+    parser.add_argument(
         "--extra-prompt",
         default="",
         help="Force append text to every question (default: empty).",
@@ -481,55 +547,13 @@ def parse_ask_command(arg_str: str) -> AskCommand:
 
 
 def _get_spacy():
-    global _spacy_nlp, _spacy_warned
-    if _spacy_nlp is not None:
-        return _spacy_nlp
-    if spacy is None:
-        if not _spacy_warned:
-            print("[Debug] spaCy import unavailable; phrase extraction will use model/regex fallback.")
-            _spacy_warned = True
-        return None
-    try:
-        _spacy_nlp = spacy.load("en_core_web_sm")
-    except Exception:
-        if not _spacy_warned:
-            print("[Debug] spaCy model 'en_core_web_sm' unavailable; phrase extraction will use model/regex fallback.")
-            _spacy_warned = True
-        _spacy_nlp = None
-    return _spacy_nlp
+    return get_spacy_nlp()
 
 
 def _extract_phrases_spacy(
     answer_text: str, limit: int
 ) -> List[Tuple[str, Tuple[int, int]]]:
-    nlp = _get_spacy()
-    if nlp is None:
-        return []
-    doc = nlp(answer_text)
-    seen = set()
-    phrases: List[Tuple[str, Tuple[int, int]]] = []
-
-    def add_phrase(text: str, start: int, end: int):
-        cleaned = text.strip()
-        if not cleaned:
-            return
-        key = cleaned.lower()
-        if key in seen:
-            return
-        word_count = len(cleaned.split())
-        if word_count == 0 or word_count > 3:
-            return
-        seen.add(key)
-        phrases.append((cleaned, (start, end)))
-
-    for chunk in doc.noun_chunks:
-        add_phrase(chunk.text, chunk.start_char, chunk.end_char)
-
-    for token in doc:
-        if token.pos_ in {"NOUN", "PROPN"} and not token.is_stop and token.is_alpha:
-            add_phrase(token.text, token.idx, token.idx + len(token.text))
-
-    return phrases[:limit]
+    return extract_spacy_visual_phrases(answer_text, limit)
 
 
 def _extract_phrases_regex(
@@ -623,14 +647,15 @@ def _rerank_phrases_with_model(
     else:
         prompt = (
             f"<|im_start|>system\n"
-            "You rerank candidate noun phrases for visual grounding.\n"
+            "You rerank candidate visual phrases for visual grounding.\n"
             "The user question defines what matters.\n"
             "The selected phrases will be used for image grounding / segmentation, so prioritize concrete visible entities in the image, "
-            "such as objects, people, animals, body parts, or clearly visible scene items.\n"
-            "Prefer the entity that most directly answers the question, then keep closely related visible support entities if helpful.\n"
-            "Avoid abstract concepts, pure attributes, colors, sizes, positions, directions, counts, pronouns, and generic filler unless no better visible entity exists.\n"
+            "such as objects, people, animals, body parts, clothing items, vehicles, and clearly visible scene items.\n"
+            "Prefer atomic visual concepts when possible, such as shirt, taxi, pants, traffic light.\n"
+            "Avoid support nouns and generic fillers such as pair, piece, thing, scene, image, style, area, and pure attributes such as colors or directions.\n"
+            "If two candidates refer to the same concept, prefer the one that is more specific to the question.\n"
             "Keep the original candidate text exactly as written. Do not invent new phrases.\n"
-            f'Return JSON only: {{"phrases": ["phrase_a", ...]}} with at most {limit} items.\n'
+            f'Return JSON only: {{"indices": [0, ...]}} with at most {limit} items.\n'
             "<|im_end|>\n"
             "<|im_start|>user\n"
             "Example 1:\n"
@@ -638,13 +663,19 @@ def _rerank_phrases_with_model(
             "Answer: The shampoo is on the dresser, to the left of the mirror.\n"
             "Candidates:\n"
             "0. shampoo\n1. dresser\n2. left\n3. mirror\n"
-            'Output: {"phrases": ["shampoo", "dresser", "mirror"]}\n\n'
+            'Output: {"indices": [0, 1, 3]}\n\n'
             "Example 2:\n"
+            "Question: What is the man holding?\n"
+            "Answer: The man is holding a pair of blue pants.\n"
+            "Candidates:\n"
+            "0. pair\n1. pants\n2. man\n"
+            'Output: {"indices": [1, 2]}\n\n'
+            "Example 3:\n"
             "Question: What color is the car?\n"
             "Answer: The car is red and parked beside a tree.\n"
             "Candidates:\n"
             "0. car\n1. red\n2. tree\n"
-            'Output: {"phrases": ["car", "tree"]}\n\n'
+            'Output: {"indices": [0, 2]}\n\n'
             "Now solve the real case.\n"
             f"Question:\n{question}\n"
             f"Answer:\n{answer_text}\n"
@@ -673,38 +704,44 @@ def _rerank_phrases_with_model(
     text = model.tokenizer.decode(gen, skip_special_tokens=True).strip()
     print(f"[Debug] Phrase rerank output: {text}")
     chosen: List[str] = []
+    chosen_indices: List[int] = []
     match = re.search(r"\{.*\}", text, flags=re.S)
     if match:
         try:
             data = json.loads(match.group(0))
+            raw_indices = data.get("indices", [])
+            chosen_indices = []
+            for idx in raw_indices:
+                if isinstance(idx, bool):
+                    continue
+                if isinstance(idx, int):
+                    chosen_indices.append(int(idx))
+                elif isinstance(idx, str) and idx.strip().isdigit():
+                    chosen_indices.append(int(idx.strip()))
             raw_list = data.get("phrases", [])
             chosen = [s for s in raw_list if isinstance(s, str)]
         except json.JSONDecodeError:
             chosen = []
+            chosen_indices = []
+    if chosen_indices:
+        filtered = []
+        seen_indices = set()
+        for idx in chosen_indices:
+            if idx < 0 or idx >= len(candidates) or idx in seen_indices:
+                continue
+            filtered.append(candidates[idx])
+            seen_indices.add(idx)
+        if filtered:
+            return filtered[:limit]
     if not chosen:
         return candidates[:limit]
-    normalized_candidates = []
-    for candidate in candidates:
-        key = candidate[0].lower().strip()
-        normalized_candidates.append((key, candidate))
-
     filtered: List[Tuple[str, Tuple[int, int]]] = []
     seen = set()
     for item in chosen:
-        key = item.lower().strip()
-        matched = None
-        for cand_key, candidate in normalized_candidates:
-            if cand_key == key:
-                matched = candidate
-                break
-        if matched is None:
-            for cand_key, candidate in normalized_candidates:
-                if key and (key in cand_key or cand_key in key):
-                    matched = candidate
-                    break
+        matched = _match_selected_phrase_to_candidate(item, candidates)
         if matched is None:
             continue
-        matched_key = matched[0].lower().strip()
+        matched_key = _normalize_visual_phrase_key(matched[0])
         if matched_key in seen:
             continue
         filtered.append(matched)
@@ -734,8 +771,11 @@ def extract_phrases_via_model(
     else:
         prompt = (
             "<|im_start|>system\n"
-            "You extract distinct noun phrases from the assistant answer. "
-            "Prefer concise phrases that refer to visible entities relevant to the user question. "
+            "You extract distinct visual phrases from the assistant answer. "
+            "Prefer concise visible entities relevant to the user question. "
+            "Prefer atomic visual concepts when possible, such as shirt, taxi, pants, man, traffic light. "
+            "Avoid support nouns such as pair or piece, and avoid abstract concepts, colors, directions, and generic filler. "
+            "Every returned phrase must appear verbatim in the answer text. "
             'Return pure JSON like {"phrases": ["phrase a", ...]}.\n'
             "<|im_end|>\n"
             "<|im_start|>user\n"
@@ -743,7 +783,7 @@ def extract_phrases_via_model(
             f"{question}\n"
             "Answer:\n"
             f"{answer_text}\n"
-            "List concise noun phrases that appear in the answer and are best suited for visual grounding. JSON only.\n"
+            "List concise visual phrases that appear in the answer and are best suited for visual grounding. JSON only.\n"
             "<|im_end|>\n"
             "<|im_start|>assistant\n"
         )
@@ -783,7 +823,9 @@ def extract_phrases_via_model(
     dedup: List[Tuple[str, Tuple[int, int]]] = []
     seen = set()
     for phrase in phrases:
-        key = phrase.lower()
+        if _is_invalid_visual_phrase_text(phrase):
+            continue
+        key = _normalize_visual_phrase_key(phrase)
         if not key or key in seen:
             continue
         dedup.append((phrase, (-1, -1)))
@@ -824,11 +866,134 @@ def build_offsets(tokenizer, answer_text: str) -> List[Tuple[int, int]]:
     return clean_offsets
 
 
+def _normalize_visual_phrase_key(text: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
+    return re.sub(r"\s+", " ", normalized)
+
+
+def _strip_leading_articles(text: str) -> str:
+    normalized = _normalize_visual_phrase_key(text)
+    for prefix in _LEADING_ARTICLES:
+        if normalized.startswith(prefix):
+            return normalized[len(prefix) :].strip()
+    return normalized
+
+
+def _normalize_visual_phrase_token(token: str) -> str:
+    token = re.sub(r"[^a-z0-9]+", "", (token or "").lower()).strip()
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
+def _visual_phrase_tokens(text: str) -> List[str]:
+    key = _strip_leading_articles(text)
+    raw_tokens = key.split()
+    tokens: List[str] = []
+    for raw in raw_tokens:
+        token = _normalize_visual_phrase_token(raw)
+        if not token or token in _INVALID_VISUAL_PHRASE_WORDS or len(token) < 2:
+            continue
+        tokens.append(token)
+    return tokens
+
+
+def _is_invalid_visual_phrase_text(text: str) -> bool:
+    key = _normalize_visual_phrase_key(text)
+    if not key or len(key) < 2:
+        return True
+    words = key.split()
+    if not words:
+        return True
+    if all(word in _INVALID_VISUAL_PHRASE_WORDS for word in words):
+        return True
+    return not _visual_phrase_tokens(text)
+
+
+def _match_selected_phrase_to_candidate(
+    selected_text: str,
+    candidates: List[Tuple[str, Tuple[int, int]]],
+) -> Optional[Tuple[str, Tuple[int, int]]]:
+    if _is_invalid_visual_phrase_text(selected_text):
+        return None
+
+    exact_key = _normalize_visual_phrase_key(selected_text)
+    stripped_key = _strip_leading_articles(selected_text)
+    selected_tokens = set(_visual_phrase_tokens(selected_text))
+
+    normalized_candidates = []
+    for candidate in candidates:
+        candidate_text = candidate[0]
+        if _is_invalid_visual_phrase_text(candidate_text):
+            continue
+        candidate_key = _normalize_visual_phrase_key(candidate_text)
+        aliases = {candidate_key, _strip_leading_articles(candidate_text)}
+        candidate_tokens = set(_visual_phrase_tokens(candidate_text))
+        normalized_candidates.append((candidate, aliases, candidate_tokens))
+
+    for candidate, aliases, _ in normalized_candidates:
+        if exact_key in aliases or stripped_key in aliases:
+            return candidate
+
+    if not selected_tokens:
+        return None
+
+    best_candidate: Optional[Tuple[str, Tuple[int, int]]] = None
+    best_score: Tuple[int, int, int] = (0, 0, 0)
+    for candidate, _, candidate_tokens in normalized_candidates:
+        if not candidate_tokens:
+            continue
+        overlap = selected_tokens & candidate_tokens
+        overlap_count = len(overlap)
+        if overlap_count == 0:
+            continue
+        score = (
+            overlap_count,
+            -abs(len(candidate_tokens) - len(selected_tokens)),
+            -len(candidate[0]),
+        )
+        if score > best_score:
+            best_score = score
+            best_candidate = candidate
+    return best_candidate
+
+
 def char_to_token(offsets: Sequence[Tuple[int, int]], char_pos: int) -> int:
     for idx, (s, e) in enumerate(offsets):
         if s <= char_pos < e:
             return idx
     return len(offsets) - 1
+
+
+def serialize_phrase_candidate(
+    candidate: PhraseCandidate, index: Optional[int] = None
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "text": candidate.text,
+        "mention_text": candidate.text,
+        "char_span": [int(candidate.char_span[0]), int(candidate.char_span[1])],
+        "mention_char_span": [int(candidate.char_span[0]), int(candidate.char_span[1])],
+        "token_span": [int(candidate.token_span[0]), int(candidate.token_span[1])],
+        "mention_token_span": [int(candidate.token_span[0]), int(candidate.token_span[1])],
+        "concept_text": candidate.concept_text,
+        "concept_char_span": (
+            [int(candidate.concept_char_span[0]), int(candidate.concept_char_span[1])]
+            if candidate.concept_char_span
+            else None
+        ),
+        "concept_token_span": (
+            [int(candidate.concept_token_span[0]), int(candidate.concept_token_span[1])]
+            if candidate.concept_token_span
+            else None
+        ),
+        "concept_lemma": candidate.concept_lemma,
+        "concept_source": candidate.concept_source,
+    }
+    if index is not None:
+        payload["index"] = index
+    return payload
 
 
 def build_phrase_candidates(
@@ -841,7 +1006,7 @@ def build_phrase_candidates(
     candidates: List[PhraseCandidate] = []
     for phrase, span in phrase_texts:
         raw = phrase.strip()
-        if not raw:
+        if not raw or _is_invalid_visual_phrase_text(raw):
             continue
         target = raw.lower()
         if span != (-1, -1):
@@ -858,9 +1023,25 @@ def build_phrase_candidates(
         token_end = char_to_token(offsets, max(start, end - 1)) + 1
         if token_end <= token_start:
             token_end = token_start + 1
+        mention_char_span = (start, end)
+        mention_token_span = (token_start, token_end)
+        (
+            concept_text,
+            concept_char_span,
+            concept_token_span,
+            concept_lemma,
+            concept_source,
+        ) = derive_visual_concept(answer_text, raw, mention_char_span, offsets)
         candidates.append(
             PhraseCandidate(
-                text=raw, char_span=(start, end), token_span=(token_start, token_end)
+                text=raw,
+                char_span=mention_char_span,
+                token_span=mention_token_span,
+                concept_text=concept_text,
+                concept_char_span=concept_char_span,
+                concept_token_span=concept_token_span,
+                concept_lemma=concept_lemma,
+                concept_source=concept_source,
             )
         )
     return candidates
@@ -881,28 +1062,28 @@ def dedupe_phrase_candidates(
         )
     )
     kept_indices: set[int] = set()
-    kept_spans: List[Tuple[int, int]] = []
-    seen_text: set[str] = set()
+    kept_items: List[Tuple[Tuple[int, int], str]] = []
     for idx, cand in indexed:
         text = (cand.text or "").strip()
         if not text:
             continue
         key = text.lower()
-        if key in seen_text:
-            continue
         start, end = cand.char_span
         if end <= start:
             continue
-        contained = False
-        for ks, ke in kept_spans:
-            if start >= ks and end <= ke:
-                contained = True
+        duplicate = False
+        for (ks, ke), kept_key in kept_items:
+            spans_overlap = not (end <= ks or ke <= start)
+            if key == kept_key and spans_overlap:
+                duplicate = True
                 break
-        if contained:
+            if start >= ks and end <= ke and spans_overlap:
+                duplicate = True
+                break
+        if duplicate:
             continue
         kept_indices.add(idx)
-        kept_spans.append((start, end))
-        seen_text.add(key)
+        kept_items.append(((start, end), key))
     return [cand for idx, cand in enumerate(candidates) if idx in kept_indices]
 
 
@@ -1240,20 +1421,66 @@ def ensure_min_image_size(
     return resized, True
 
 
-def handle_load(session: SessionState, path: str):
+def downscale_image_to_max_side(
+    image: Image.Image, max_side: int
+) -> Tuple[Image.Image, bool, float]:
+    if max_side <= 0:
+        return image, False, 1.0
+    width, height = image.size
+    longest_side = max(width, height)
+    if longest_side <= max_side:
+        return image, False, 1.0
+    scale = max_side / float(longest_side)
+    new_width = max(1, int(round(width * scale)))
+    new_height = max(1, int(round(height * scale)))
+    resampling = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
+    resized = image.resize((new_width, new_height), resample=resampling)
+    return resized, True, scale
+
+
+def handle_load(session: SessionState, path: str) -> LoadedImageInfo:
     image, resolved = load_image(path)
+    original_width, original_height = image.size
+    max_image_side = max(int(getattr(session.args, "max_image_side", 0) or 0), 0)
+    processed_image, auto_resized, resize_scale = downscale_image_to_max_side(
+        image, max_image_side
+    )
     target = session.session_paths.image_path(Path(resolved).name)
     target.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        if Path(resolved).resolve() != target.resolve():
-            shutil.copy2(resolved, target)
-    except Exception:
-        # Fallback to saving via PIL if copy fails (e.g., remote streams)
-        image.save(target)
-    session.current_image = image
+    if auto_resized:
+        processed_image.save(target)
+    else:
+        try:
+            if Path(resolved).resolve() != target.resolve():
+                shutil.copy2(resolved, target)
+        except Exception:
+            # Fallback to saving via PIL if copy fails (e.g., remote streams)
+            processed_image.save(target)
+    session.current_image = processed_image
     session.current_image_path = target
+    session.current_image_original_size = (original_width, original_height)
+    session.current_image_auto_resized = auto_resized
+    session.current_image_resize_scale = resize_scale
     session.reset_answer()
-    print(f"[Load] Image loaded: {session.current_image_path.name} {image.size}")
+    info = LoadedImageInfo(
+        original_width=original_width,
+        original_height=original_height,
+        processed_width=processed_image.size[0],
+        processed_height=processed_image.size[1],
+        auto_resized=auto_resized,
+        resize_scale=resize_scale,
+    )
+    if auto_resized:
+        print(
+            "[Load] Image auto-resized: "
+            f"{session.current_image_path.name} "
+            f"{original_width}x{original_height} -> "
+            f"{info.processed_width}x{info.processed_height} "
+            f"(scale={resize_scale:.4f})"
+        )
+    else:
+        print(f"[Load] Image loaded: {session.current_image_path.name} {processed_image.size}")
+    return info
 
 
 def handle_ask(session: SessionState, question: str):
@@ -1295,6 +1522,7 @@ def handle_ground(session: SessionState, indices: List[int]):
         print(
             f"[Ground] #{idx} mask saved to {rec.overlay_path} (mask: {rec.mask_path.name}{roi_info})"
         )
+    return records
 
 
 def _first_bbox_record(

@@ -28,6 +28,7 @@ from scripts.demo.interact import (  # noqa: E402
     load_model,
     perform_ground_custom,
     pipeline_default_ask,
+    serialize_phrase_candidate,
 )
 from scripts.demo.token_to_region import (  # noqa: E402
     build_token_to_region_heatmap,
@@ -112,6 +113,7 @@ def build_args_from_env(cli_parse_args):
         "FLMM_WEB_PHRASE_MAX_TOKENS", args.phrase_max_tokens
     )
     args.max_phrases = env_int("FLMM_WEB_MAX_PHRASES", args.max_phrases)
+    args.max_image_side = env_int("FLMM_WEB_MAX_IMAGE_SIDE", args.max_image_side)
     args.max_history_turns = env_int(
         "FLMM_WEB_MAX_HISTORY_TURNS", args.max_history_turns
     )
@@ -194,14 +196,7 @@ class WorkerRuntime:
     def _serialize_phrases(self, session: SessionState) -> List[Dict[str, Any]]:
         payload: List[Dict[str, Any]] = []
         for idx, cand in enumerate(session.phrases):
-            payload.append(
-                {
-                    "index": idx,
-                    "text": cand.text,
-                    "char_span": cand.char_span,
-                    "token_span": cand.token_span,
-                }
-            )
+            payload.append(serialize_phrase_candidate(cand, index=idx))
         return payload
 
     def _normalize_bbox(self, bbox: Any) -> Optional[List[float]]:

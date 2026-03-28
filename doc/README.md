@@ -143,6 +143,21 @@
 
 ---
 
+### 🗂️ [07-execution-plan](./07-execution-plan/) - 执行文档与交付顺序
+
+**面向“新对话直接执行”的项目级文档**
+
+| 文档 | 说明 | 关键词 |
+|------|------|--------|
+| [`README.md`](./07-execution-plan/README.md) | runtime、直连接入、纠错层的统一执行文档 | runtime、deploy、verification、correction |
+| [`../agent.md`](../agent.md) | 给后续 agent / subagent 的仓库级协作说明 | agent、review、commit、self-check |
+
+**推荐阅读顺序**：
+1. `../agent.md` - 先看新对话中的工作约束
+2. `README.md` - 再看项目级执行顺序和验收标准
+
+---
+
 ### 📦 [archive](./archive/) - 历史文档
 
 **已过期或仅供参考的历史文档**
@@ -206,6 +221,13 @@
 3. [`../scripts/demo/web/backend/README.md`](../scripts/demo/web/backend/README.md)
 4. [`06-explainable-framework/DEMO_USAGE_AND_CODE_GUIDE.md`](./06-explainable-framework/DEMO_USAGE_AND_CODE_GUIDE.md)
 
+### 场景 9：我要把 runtime 独立出去，并为新对话准备可执行规范
+👉 查看：
+1. [`../agent.md`](../agent.md)
+2. [`07-execution-plan/README.md`](./07-execution-plan/README.md)
+3. [`webdemo/FRONTEND_AGENT_HANDOFF.md`](./webdemo/FRONTEND_AGENT_HANDOFF.md)
+4. [`06-explainable-framework/ROADMAP.md`](./06-explainable-framework/ROADMAP.md)
+
 ---
 
 ## 📊 文档概览
@@ -245,6 +267,9 @@ doc/
 │   ├── ATTENTION_DIRECTIONS.md        # attention 方向说明
 │   └── ROADMAP.md                     # 研究路线与实施计划
 │
+├── 07-execution-plan/                 # 执行文档与交付顺序
+│   └── README.md                      # runtime / 直连接入 / 纠错层执行文档
+│
 ├── webdemo/                            # Web demo 与前后端对接
 │   ├── README.md                      # 端到端逻辑说明
 │   └── FRONTEND_AGENT_HANDOFF.md      # 给前端开发者的交接文档
@@ -277,6 +302,7 @@ doc/
 ### 更新记录
 - **2025-11-09**：重新组织文档结构，创建分类目录和统一索引
 - **2025-11-08**：添加 Qwen 测试和修复文档
+- **2026-03-23**：新增 runtime / 直连接入 / 纠错层执行文档与 `agent.md`
 
 ### 贡献指南
 添加新文档时，请：
@@ -292,5 +318,5 @@ doc/
 
 ---
 
-**最后更新**：2025-11-09  
+**最后更新**：2026-03-23
 **维护者**：AI Assistant & Contributors

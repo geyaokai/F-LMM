@@ -1,0 +1,15 @@
+[Unit]
+Description=F-LMM Runtime Worker
+After=network.target flmm-backend.service
+Requires=flmm-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=__RUNTIME_ROOT__
+EnvironmentFile=__RUNTIME_ROOT__/deployment/runtime/.env
+ExecStart=/usr/bin/env bash __RUNTIME_ROOT__/deployment/runtime/bin/start_worker.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

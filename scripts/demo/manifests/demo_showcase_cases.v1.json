@@ -1,0 +1,642 @@
+{
+  "schema_version": "1.0",
+  "description": "Stable demo showcase cases validated through the live FastAPI + worker task queue on 2026-03-20. Use the top-level anchor question per sample for demos first. Richer variants are exploratory prompt options for showcase use and are not individually verified golden outputs.",
+  "validated_on": "2026-03-20",
+  "validation_mode": "session/create -> /tasks ASK -> /tasks GROUND",
+  "samples": [
+    {
+      "id": "demo_taxi_shirt_color",
+      "image_path": "data/custom/demo_taxi.jpg",
+      "question": "What is the color of the man's shirt?",
+      "expected_answer": "The man's shirt appears to be yellow.",
+      "answer_contains": [
+        "shirt",
+        "yellow"
+      ],
+      "observed_phrases": [
+        {
+          "index": 0,
+          "text": "man"
+        },
+        {
+          "index": 1,
+          "text": "shirt"
+        }
+      ],
+      "ground_click": {
+        "index": 1,
+        "text": "shirt"
+      },
+      "expected_bbox": [
+        161.0,
+        32.0,
+        233.0,
+        113.0
+      ],
+      "verified_session_id": "9ac1e5ed-978a-4e3c-925a-39eb2c2ef5c2",
+      "verified_task_ids": {
+        "ask": 210,
+        "ground": 211
+      },
+      "notes": "Primary grounding demo for the one-pass Qwen fix.",
+      "default_variant_id": "anchor",
+      "variants": [
+        {
+          "id": "anchor",
+          "kind": "anchor",
+          "title": "Anchor",
+          "question": "What is the color of the man's shirt?",
+          "expected_answer": "The man's shirt appears to be yellow.",
+          "answer_contains": [
+            "shirt",
+            "yellow"
+          ],
+          "ground_click": {
+            "index": 1,
+            "text": "shirt"
+          },
+          "expected_concepts": [
+            "man",
+            "shirt",
+            "yellow"
+          ]
+        },
+        {
+          "id": "objects",
+          "kind": "rich",
+          "title": "Visible Objects",
+          "question": "What visible objects, clothing items, and vehicles are around the man?",
+          "expected_answer": "The man is wearing a yellow shirt and is next to a yellow taxi, with folding chairs and clothing around him.",
+          "answer_contains": [
+            "man",
+            "shirt",
+            "taxi"
+          ],
+          "ground_click": {
+            "index": 1,
+            "text": "shirt"
+          },
+          "expected_concepts": [
+            "man",
+            "yellow shirt",
+            "taxi",
+            "folding chairs",
+            "clothing"
+          ]
+        },
+        {
+          "id": "scene",
+          "kind": "rich",
+          "title": "Action And Scene",
+          "question": "Describe the man, the vehicle, and the objects he is handling.",
+          "expected_answer": "A man in a yellow shirt is standing by an open taxi trunk while handling folding chairs with clothes hanging on them.",
+          "answer_contains": [
+            "man",
+            "taxi",
+            "chairs"
+          ],
+          "ground_click": {
+            "index": 0,
+            "text": "man"
+          },
+          "expected_concepts": [
+            "person",
+            "yellow shirt",
+            "open taxi trunk",
+            "folding chairs",
+            "clothes"
+          ]
+        },
+        {
+          "id": "details",
+          "kind": "rich",
+          "title": "Standout Details",
+          "question": "What color and object details stand out most in this street scene?",
+          "expected_answer": "The yellow shirt and yellow taxi stand out most, along with blue clothing draped over folding chairs.",
+          "answer_contains": [
+            "yellow",
+            "shirt",
+            "taxi"
+          ],
+          "ground_click": {
+            "index": 1,
+            "text": "shirt"
+          },
+          "expected_concepts": [
+            "yellow shirt",
+            "yellow taxi",
+            "blue clothing",
+            "folding chairs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo_room_under_mirror",
+      "image_path": "data/custom/shampoo_room.png",
+      "question": "What is under the mirror?",
+      "expected_answer": "A wooden dresser with drawers.",
+      "answer_contains": [
+        "dresser"
+      ],
+      "observed_phrases": [
+        {
+          "index": 0,
+          "text": "dresser"
+        }
+      ],
+      "ground_click": {
+        "index": 0,
+        "text": "dresser"
+      },
+      "expected_bbox": [
+        76.0,
+        206.0,
+        241.0,
+        310.0
+      ],
+      "verified_session_id": "e30852b2-4e6f-4af2-b9e0-701fa5534f3e",
+      "verified_task_ids": {
+        "ask": 212,
+        "ground": 213
+      },
+      "notes": "Clean single-phrase answer. Strong for relation-to-object grounding.",
+      "default_variant_id": "anchor",
+      "variants": [
+        {
+          "id": "anchor",
+          "kind": "anchor",
+          "title": "Anchor",
+          "question": "What is under the mirror?",
+          "expected_answer": "A wooden dresser with drawers.",
+          "answer_contains": [
+            "dresser"
+          ],
+          "ground_click": {
+            "index": 0,
+            "text": "dresser"
+          },
+          "expected_concepts": [
+            "mirror",
+            "dresser"
+          ]
+        },
+        {
+          "id": "objects",
+          "kind": "rich",
+          "title": "Room Objects",
+          "question": "What furniture and visible objects can you identify in this room?",
+          "expected_answer": "The room shows a bed, a wooden dresser with a mirror, a chair by the window, a bookshelf, plants, and a basket.",
+          "answer_contains": [
+            "bed",
+            "dresser",
+            "mirror"
+          ],
+          "ground_click": {
+            "index": 0,
+            "text": "dresser"
+          },
+          "expected_concepts": [
+            "bed",
+            "dresser",
+            "mirror",
+            "chair",
+            "window",
+            "bookshelf",
+            "plants",
+            "basket"
+          ]
+        },
+        {
+          "id": "scene",
+          "kind": "rich",
+          "title": "Left To Right",
+          "question": "Describe the room from left to right using visible furniture and objects.",
+          "expected_answer": "From left to right there is a bed and dresser with a mirror, then a window with a chair and plants, and a tall bookshelf with a basket nearby.",
+          "answer_contains": [
+            "dresser",
+            "window",
+            "bookshelf"
+          ],
+          "ground_click": {
+            "index": 0,
+            "text": "dresser"
+          },
+          "expected_concepts": [
+            "bed",
+            "dresser",
+            "mirror",
+            "window",
+            "chair",
+            "plants",
+            "bookshelf",
+            "basket"
+          ]
+        },
+        {
+          "id": "details",
+          "kind": "rich",
+          "title": "Main Focal Areas",
+          "question": "What are the main focal areas in this room scene?",
+          "expected_answer": "The main focal areas are the bed in the foreground, the dresser and mirror on the left, and the window and bookshelf on the right.",
+          "answer_contains": [
+            "bed",
+            "dresser",
+            "bookshelf"
+          ],
+          "ground_click": {
+            "index": 0,
+            "text": "dresser"
+          },
+          "expected_concepts": [
+            "foreground bed",
+            "dresser",
+            "mirror",
+            "window",
+            "bookshelf"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo_bench_foreground",
+      "image_path": "data/custom/demo_bench.jpg",
+      "question": "What piece of furniture is in the foreground?",
+      "expected_answer": "The foreground features a metal bench with slatted backrest and seat, positioned on grass under tree shade.",
+      "answer_contains": [
+        "bench"
+      ],
+      "observed_phrases": [
+        {
+          "index": 0,
+          "text": "foreground"
+        },
+        {
+          "index": 1,
+          "text": "metal bench"
+        }
+      ],
+      "ground_click": {
+        "index": 1,
+        "text": "metal bench"
+      },
+      "expected_bbox": [
+        225.0,
+        178.0,
+        456.0,
+        384.0
+      ],
+      "verified_session_id": "c931d592-48e4-4c4a-b693-eacf15ebb9a4",
+      "verified_task_ids": {
+        "ask": 214,
+        "ground": 215
+      },
+      "notes": "Large isolated object, good for first-time audience demos.",
+      "default_variant_id": "anchor",
+      "variants": [
+        {
+          "id": "anchor",
+          "kind": "anchor",
+          "title": "Anchor",
+          "question": "What piece of furniture is in the foreground?",
+          "expected_answer": "The foreground features a metal bench with slatted backrest and seat, positioned on grass under tree shade.",
+          "answer_contains": [
+            "bench"
+          ],
+          "ground_click": {
+            "index": 1,
+            "text": "metal bench"
+          },
+          "expected_concepts": [
+            "bench",
+            "foreground"
+          ]
+        },
+        {
+          "id": "objects",
+          "kind": "rich",
+          "title": "Park Objects",
+          "question": "What objects are visible in this park scene?",
+          "expected_answer": "The scene shows a metal bench on grass, trees, a walkway, parked cars, and another bench farther back.",
+          "answer_contains": [
+            "bench",
+            "trees",
+            "cars"
+          ],
+          "ground_click": {
+            "index": 1,
+            "text": "metal bench"
+          },
+          "expected_concepts": [
+            "metal bench",
+            "grass",
+            "trees",
+            "walkway",
+            "parked cars",
+            "background bench"
+          ]
+        },
+        {
+          "id": "scene",
+          "kind": "rich",
+          "title": "Foreground And Background",
+          "question": "Describe the foreground and background of this park image.",
+          "expected_answer": "In the foreground there is a metal bench on a concrete pad in the grass, while the background has trees, a walkway, and parked cars.",
+          "answer_contains": [
+            "bench",
+            "grass",
+            "cars"
+          ],
+          "ground_click": {
+            "index": 1,
+            "text": "metal bench"
+          },
+          "expected_concepts": [
+            "foreground bench",
+            "concrete pad",
+            "grass",
+            "trees",
+            "walkway",
+            "parked cars"
+          ]
+        },
+        {
+          "id": "details",
+          "kind": "rich",
+          "title": "Furniture And Environment",
+          "question": "What furniture, natural elements, and vehicles can you identify here?",
+          "expected_answer": "The image contains a bench, grassy lawn, large trees, and several parked cars along the road.",
+          "answer_contains": [
+            "bench",
+            "trees",
+            "cars"
+          ],
+          "ground_click": {
+            "index": 1,
+            "text": "metal bench"
+          },
+          "expected_concepts": [
+            "bench",
+            "lawn",
+            "trees",
+            "parked cars",
+            "road"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo_train_middle",
+      "image_path": "data/custom/demo_train.jpg",
+      "question": "What is in the middle of the railway?",
+      "expected_answer": "A train is on the railway tracks, positioned centrally with its likely green and white coloring.",
+      "answer_contains": [
+        "train"
+      ],
+      "observed_phrases": [
+        {
+          "index": 0,
+          "text": "train"
+        },
+        {
+          "index": 1,
+          "text": "railway"
+        }
+      ],
+      "ground_click": {
+        "index": 0,
+        "text": "train"
+      },
+      "expected_bbox": [
+        141.0,
+        201.0,
+        209.0,
+        299.0
+      ],
+      "verified_session_id": "de74d98f-74f1-4deb-8368-5882a6627052",
+      "verified_task_ids": {
+        "ask": 216,
+        "ground": 217
+      },
+      "notes": "Small but centered target. Good backup when you want a non-human scene.",
+      "default_variant_id": "anchor",
+      "variants": [
+        {
+          "id": "anchor",
+          "kind": "anchor",
+          "title": "Anchor",
+          "question": "What is in the middle of the railway?",
+          "expected_answer": "A train is on the railway tracks, positioned centrally with its likely green and white coloring.",
+          "answer_contains": [
+            "train"
+          ],
+          "ground_click": {
+            "index": 0,
+            "text": "train"
+          },
+          "expected_concepts": [
+            "train",
+            "railway"
+          ]
+        },
+        {
+          "id": "objects",
+          "kind": "rich",
+          "title": "Major Objects",
+          "question": "What major objects make up this railway scene?",
+          "expected_answer": "The scene includes a train on the tracks, utility poles and wires, grass, and buildings in the distance.",
+          "answer_contains": [
+            "train",
+            "tracks",
+            "poles"
+          ],
+          "ground_click": {
+            "index": 0,
+            "text": "train"
+          },
+          "expected_concepts": [
+            "train",
+            "tracks",
+            "utility poles",
+            "overhead wires",
+            "grass",
+            "buildings"
+          ]
+        },
+        {
+          "id": "scene",
+          "kind": "rich",
+          "title": "Railway Description",
+          "question": "Describe the train scene, including the railway and surrounding structures.",
+          "expected_answer": "A train is traveling along curved railway tracks with utility poles and overhead wires on the sides, surrounded by grass and a few buildings.",
+          "answer_contains": [
+            "train",
+            "tracks",
+            "wires"
+          ],
+          "ground_click": {
+            "index": 0,
+            "text": "train"
+          },
+          "expected_concepts": [
+            "train",
+            "curved tracks",
+            "utility poles",
+            "wires",
+            "grass",
+            "buildings"
+          ]
+        },
+        {
+          "id": "details",
+          "kind": "rich",
+          "title": "Transport And Landscape",
+          "question": "What transportation and landscape elements are visible in this image?",
+          "expected_answer": "Visible elements include a train, railway tracks, poles and wires, grassy sides, and distant houses or hills.",
+          "answer_contains": [
+            "train",
+            "tracks",
+            "grass"
+          ],
+          "ground_click": {
+            "index": 0,
+            "text": "train"
+          },
+          "expected_concepts": [
+            "train",
+            "railway tracks",
+            "poles",
+            "wires",
+            "grass",
+            "houses",
+            "hills"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo_man_dog",
+      "image_path": "data/custom/demo_man_dog.jpg",
+      "question": "What animal is the man holding?",
+      "expected_answer": "The man is holding a small dog with light brown fur on its his shoulder.",
+      "answer_contains": [
+        "dog"
+      ],
+      "observed_phrases": [
+        {
+          "index": 0,
+          "text": "man"
+        },
+        {
+          "index": 1,
+          "text": "dog"
+        }
+      ],
+      "ground_click": {
+        "index": 1,
+        "text": "dog"
+      },
+      "expected_bbox": [
+        53.0,
+        245.0,
+        190.0,
+        358.0
+      ],
+      "verified_session_id": "6c5bbb19-f734-4aa3-b300-115affbe965f",
+      "verified_task_ids": {
+        "ask": 218,
+        "ground": 219
+      },
+      "notes": "Compact foreground object with a very clear clicked phrase.",
+      "default_variant_id": "anchor",
+      "variants": [
+        {
+          "id": "anchor",
+          "kind": "anchor",
+          "title": "Anchor",
+          "question": "What animal is the man holding?",
+          "expected_answer": "The man is holding a small dog with light brown fur on its his shoulder.",
+          "answer_contains": [
+            "dog"
+          ],
+          "ground_click": {
+            "index": 1,
+            "text": "dog"
+          },
+          "expected_concepts": [
+            "man",
+            "dog"
+          ]
+        },
+        {
+          "id": "objects",
+          "kind": "rich",
+          "title": "People Animal Clothing",
+          "question": "Describe the visible people, animals, and clothing in the image.",
+          "expected_answer": "The image shows a man holding a small light-colored dog while wearing a blue garment with colorful trim.",
+          "answer_contains": [
+            "man",
+            "dog",
+            "blue"
+          ],
+          "ground_click": {
+            "index": 1,
+            "text": "dog"
+          },
+          "expected_concepts": [
+            "man",
+            "small dog",
+            "blue garment",
+            "colorful trim"
+          ]
+        },
+        {
+          "id": "scene",
+          "kind": "rich",
+          "title": "Subject And Clothing",
+          "question": "How would you describe the subject, the animal, and their clothing details?",
+          "expected_answer": "A man is holding a small dog against his shoulder, and he is wrapped in a blue cloth with bright patterned trim.",
+          "answer_contains": [
+            "man",
+            "dog",
+            "blue"
+          ],
+          "ground_click": {
+            "index": 0,
+            "text": "man"
+          },
+          "expected_concepts": [
+            "man",
+            "small dog",
+            "blue cloth",
+            "patterned trim",
+            "close-up portrait"
+          ]
+        },
+        {
+          "id": "details",
+          "kind": "rich",
+          "title": "Appearance Details",
+          "question": "What visible entities and appearance details can you identify?",
+          "expected_answer": "There is a man with gray hair and facial hair, and he is holding a small dog with light fur.",
+          "answer_contains": [
+            "man",
+            "dog",
+            "fur"
+          ],
+          "ground_click": {
+            "index": 0,
+            "text": "man"
+          },
+          "expected_concepts": [
+            "man",
+            "gray hair",
+            "facial hair",
+            "small dog",
+            "light fur"
+          ]
+        }
+      ]
+    }
+  ]
+}

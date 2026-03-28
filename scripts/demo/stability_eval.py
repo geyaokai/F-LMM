@@ -24,6 +24,7 @@ from scripts.demo.interact import (  # noqa: E402
     load_model,
     parse_args as interact_parse_args,
     pipeline_default_ask,
+    serialize_phrase_candidate,
 )
 from scripts.demo.web.backend.prompt_overrides import apply_prompt_overrides  # noqa: E402
 
@@ -157,14 +158,7 @@ def relpath(path: Optional[Path], root: Path) -> Optional[str]:
 def serialize_phrases(session: SessionState) -> List[Dict[str, Any]]:
     payload: List[Dict[str, Any]] = []
     for idx, phrase in enumerate(session.phrases):
-        payload.append(
-            {
-                "index": idx,
-                "text": phrase.text,
-                "char_span": [int(phrase.char_span[0]), int(phrase.char_span[1])],
-                "token_span": [int(phrase.token_span[0]), int(phrase.token_span[1])],
-            }
-        )
+        payload.append(serialize_phrase_candidate(phrase, index=idx))
     return payload
 
 
